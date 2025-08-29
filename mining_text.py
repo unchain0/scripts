@@ -1,10 +1,9 @@
 import webbrowser
 from string import Template
 from time import perf_counter
-from typing import Iterable
 from urllib.parse import quote
 
-words: list[str] = input("Enter the words to search (comma separated): ").split(",")
+words = input("Enter the words to search (comma separated): ").split(",")
 
 TPL = Template(
     "https://dicionario.reverso.net/ingles-definicao/${word}#translation=portuguese"
@@ -20,20 +19,11 @@ def build_url(word: str) -> str:
     return TPL.substitute(word=encoded)
 
 
-def open_words(items: Iterable[str]) -> None:
-    seen: set[str] = set()
-    first = True
+def open_words(items: list[str]) -> None:
     for token in items:
         norm = normalize(token)
-        if not norm or norm in seen:
-            continue
-        seen.add(norm)
         url = build_url(norm)
-        if first:
-            webbrowser.open_new_tab(url)
-            first = False
-        else:
-            webbrowser.open(url)
+        webbrowser.open(url, new=2)
 
 
 start = perf_counter()
