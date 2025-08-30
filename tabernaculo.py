@@ -46,6 +46,7 @@ SHEKEL_TO_KG = 0.0114  # 1 shekel ≈ 11.4 g
 
 # Create DataFrame from material data
 materials_df = pd.DataFrame([vars(m) for m in materials_data])
+materials_df.set_index("name", inplace=True)
 
 # Calculate the total weight in kg for each material
 materials_df["weight_kg"] = (
