@@ -52,16 +52,16 @@ materials_df["weight_kg"] = (
     materials_df["talents"] * TALENT_TO_KG + materials_df["shekels"] * SHEKEL_TO_KG
 )
 
-# Get the list of tickers
-tickers_list = materials_df["ticker"].tolist()
+# Get all tickers including BRL exchange rate
+tickers_list = materials_df["ticker"].tolist() + ["BRL=X"]
 
-# Download the current prices of materials
+# Download all prices in a single request
 prices_df = yf.download(
     tickers=tickers_list, period="1d", progress=False, auto_adjust=True
 )["Close"].iloc[0]
 
-# Get the USD/BRL exchange rate
-usd_brl_rate = yf.Ticker("BRL=X").history(period="1d")["Close"].iloc[0]
+# Extract USD/BRL rate
+usd_brl_rate = prices_df["BRL=X"]
 
 # Calculate the price per kg in USD for each material
 materials_df["price_usd_per_kg"] = materials_df.apply(
