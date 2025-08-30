@@ -1,4 +1,5 @@
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -8,12 +9,19 @@ sys.path.append(str(Path(__file__).parent.parent))
 from selection_process import search_text_in_pdf
 
 
+@dataclass
+class TestCase:
+    name: str
+    file: str
+    expected_page: int
+
+
 @pytest.fixture
 def downloads_dir() -> Path:
     return Path(__file__).parent.parent / "downloads"
 
 
-def test_downloads_directory_exists(downloads_dir: Path):
+def test_downloads_directory_exists(downloads_dir: Path) -> None:
     """Test if downloads directory exists"""
     assert downloads_dir.exists(), (
         "Downloads directory not found. Please run the main script first."
@@ -21,30 +29,30 @@ def test_downloads_directory_exists(downloads_dir: Path):
 
 
 TEST_CASES = [
-    {
-        "name": "SANDERSON SANTOS THEOPHILO CORREA",
-        "file": "CHAMAMENTO PÚBLICO Nº 001_2025 – Convocação 007_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
-        "expected_page": 2,
-    },
-    {
-        "name": "VICTOR HUGO MELO DA SILVA",
-        "file": "CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 04_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
-        "expected_page": 2,
-    },
-    {
-        "name": "BRYAN ANGEL LEITE DOS SANTOS",
-        "file": "CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 01_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
-        "expected_page": 4,
-    },
+    TestCase(
+        name="SANDERSON SANTOS THEOPHILO CORREA",
+        file="CHAMAMENTO PÚBLICO Nº 001_2025 – Convocação 007_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
+        expected_page=2,
+    ),
+    TestCase(
+        name="VICTOR HUGO MELO DA SILVA",
+        file="CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 04_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
+        expected_page=2,
+    ),
+    TestCase(
+        name="BRYAN ANGEL LEITE DOS SANTOS",
+        file="CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 01_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
+        expected_page=4,
+    ),
 ]
 
 
 @pytest.mark.parametrize("test_case", TEST_CASES)
-def test_name_search_in_pdf(test_case, downloads_dir):
+def test_name_search_in_pdf(test_case: TestCase, downloads_dir: Path) -> None:
     """Test that each name is found in the correct file and page"""
-    name = test_case["name"]
-    file = test_case["file"]
-    expected_page = test_case["expected_page"]
+    name = test_case.name
+    file = test_case.file
+    expected_page = test_case.expected_page
 
     # Build the full path to the PDF file
     filepath = downloads_dir / file
