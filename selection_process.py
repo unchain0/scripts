@@ -47,10 +47,10 @@ def get_pdf_links(url: str) -> list[PdfLink]:
     Busca links de PDFs relacionados ao Programa Jovem Cidadão no site especificado.
 
     Args:
-        url: URL do site de chamamento público.
+        url: URL do site de chamamento público
 
     Returns:
-        Lista de PdfLink contendo URLs e títulos dos PDFs encontrados.
+        Lista de PdfLink contendo URLs e títulos dos PDFs encontrados
     """
     response = requests.get(url)
     soup = BeautifulSoup(response.content, "html.parser")
@@ -78,11 +78,11 @@ def download_pdf(url: str, filename: Path) -> Path | None:
     Baixa um arquivo PDF da URL especificada.
 
     Args:
-        url: URL do arquivo PDF.
-        filename: Nome do arquivo para salvar o PDF.
+        url: URL do arquivo PDF
+        filename: Nome do arquivo para salvar o PDF
 
     Returns:
-        Caminho do arquivo salvo ou None se o download falhar.
+        Caminho do arquivo salvo ou None se o download falhar
     """
     response = requests.get(url, stream=True)
     if response.status_code == 200:
@@ -101,7 +101,7 @@ def send_notification(message: str) -> None:
     Envia uma notificação usando ntfy.sh.
 
     Args:
-        message: Mensagem a ser enviada.
+        message: Mensagem a ser enviada
     """
     try:
         requests.post(
@@ -114,7 +114,7 @@ def send_notification(message: str) -> None:
             },
         )
     except Exception as e:
-        print(f"Error sending notification: {e}")
+        print(f"Failed to send notification: {e}")
 
 
 def search_text_in_pdf(filepath: Path, search_text: str) -> list[int]:
@@ -122,11 +122,11 @@ def search_text_in_pdf(filepath: Path, search_text: str) -> list[int]:
     Procura um texto específico em um arquivo PDF.
 
     Args:
-        filepath: Caminho do arquivo PDF.
-        search_text: Texto a ser procurado.
+        filepath: Caminho do arquivo PDF
+        search_text: Texto a ser procurado
 
     Returns:
-        Lista de números das páginas onde o texto foi encontrado.
+        Lista de números das páginas onde o texto foi encontrado
     """
     pages_found = []
     try:
@@ -138,7 +138,7 @@ def search_text_in_pdf(filepath: Path, search_text: str) -> list[int]:
                     pages_found.append(page_num + 1)
         return pages_found
     except Exception as e:
-        print(f"Error reading {filepath}: {e}")
+        print(f"Failed to read file {filepath}: {e}")
         return []
 
 
@@ -147,28 +147,27 @@ def search_all_pdfs(search_text: str) -> list[SearchResult]:
     Procura um texto em todos os PDFs da pasta 'downloads'.
 
     Args:
-        search_text: Texto a ser procurado em todos os PDFs.
+        search_text: Texto a ser procurado em todos os PDFs
 
     Returns:
-        Lista de SearchResult contendo nome dos arquivos e páginas onde o texto foi encontrado.
+        Lista de SearchResult contendo nome dos arquivos e páginas onde o texto foi encontrado
     """
     results: list[SearchResult] = []
-    downloads_dir = Path("downloads")
-    if not downloads_dir.exists():
-        print("Downloads directory not found. Please download PDFs first.")
+    downloads_path = Path("downloads")
+    if not downloads_path.exists():
+        print("Directory 'downloads' not found. Please download PDFs first.")
         return results
 
-    pdf_files = [f.name for f in downloads_dir.glob("*.pdf")]
+    pdf_files = list(downloads_path.glob("*.pdf"))
     if not pdf_files:
-        print("No PDF files found in downloads directory.")
+        print("No PDF files found in 'downloads' directory.")
         return results
 
     with tqdm(pdf_files, desc="Procurando PDFs", unit="arquivo") as pbar:
-        for pdf_file in pbar:
-            filepath = downloads_dir / pdf_file
+        for filepath in pbar:
             pages = search_text_in_pdf(filepath, search_text)
             if pages:
-                results.append(SearchResult(filename=pdf_file, pages=pages))
+                results.append(SearchResult(filename=filepath.name, pages=pages))
 
     return results
 
@@ -186,7 +185,7 @@ def main():
     # Get name from environment variable
     my_name = getenv("MY_NAME")
     if not my_name:
-        print("Error: MY_NAME not found in .env file")
+        print("Error: Environment variable MY_NAME not found")
         return
 
     # Step 1: Download PDFs
