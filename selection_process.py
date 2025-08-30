@@ -11,16 +11,38 @@ Os PDFs são salvos na pasta 'downloads' e o script filtra apenas documentos que
 'PROGRAMA JOVEM CIDADÃO' e '2025' no título.
 """
 
-import os
+from dataclasses import dataclass
+from os import getenv
+from pathlib import Path
 from urllib.parse import urljoin
 
-import PyPDF2
 import requests
 from bs4 import BeautifulSoup, Tag
+from dotenv import load_dotenv
+from pypdf import PdfReader
 from tqdm import tqdm
 
 
-def get_pdf_links(url: str) -> list[dict[str, str]]:
+@dataclass
+class PdfLink:
+    """Representa um link para um PDF do Programa Jovem Cidadão."""
+
+    url: str
+    title: str
+
+
+@dataclass
+class SearchResult:
+    """Representa o resultado da busca em um arquivo PDF."""
+
+    filename: str
+    pages: list[int]
+
+
+load_dotenv()
+
+
+def get_pdf_links(url: str) -> list[PdfLink]:
     """
     Busca links de PDFs relacionados ao Programa Jovem Cidadão no site especificado.
 
@@ -28,8 +50,7 @@ def get_pdf_links(url: str) -> list[dict[str, str]]:
         url: URL do site de chamamento público.
 
     Returns:
-        Lista de dicionários contendo URLs e títulos dos PDFs encontrados.
-        Cada dicionário tem as chaves 'url' e 'title'.
+        Lista de PdfLink contendo URLs e títulos dos PDFs encontrados.
     """
     response = requests.get(url)
     soup = BeautifulSoup(response.content, "html.parser")
@@ -47,12 +68,12 @@ def get_pdf_links(url: str) -> list[dict[str, str]]:
             and "PROGRAMA JOVEM CIDADÃO" in link.text
             and "2025" in link.text
         ):
-            links.append({"url": urljoin(url, href), "title": link.text.strip()})
+            links.append(PdfLink(url=urljoin(url, href), title=link.text.strip()))
 
     return links
 
 
-def download_pdf(url: str, filename: str) -> str | None:
+def download_pdf(url: str, filename: Path) -> Path | None:
     """
     Baixa um arquivo PDF da URL especificada.
 
@@ -65,16 +86,38 @@ def download_pdf(url: str, filename: str) -> str | None:
     """
     response = requests.get(url, stream=True)
     if response.status_code == 200:
-        os.makedirs("downloads", exist_ok=True)
-        filepath = os.path.join("downloads", filename)
-        with open(filepath, "wb") as f:
+        downloads_path = Path("downloads")
+        downloads_path.mkdir(exist_ok=True)
+        filepath = downloads_path / filename
+        with filepath.open("wb") as f:
             for data in response.iter_content(chunk_size=1024):
                 f.write(data)
         return filepath
     return None
 
 
-def search_text_in_pdf(filepath: str, search_text: str) -> list[int]:
+def send_notification(message: str) -> None:
+    """
+    Envia uma notificação usando ntfy.sh.
+
+    Args:
+        message: Mensagem a ser enviada.
+    """
+    try:
+        requests.post(
+            "https://ntfy.sh/saquarema_jovem_cidadao",
+            data=message.encode(encoding="utf-8"),
+            headers={
+                "Title": "PJC",
+                "Priority": "urgent",
+                "Tags": "rotating_light",
+            },
+        )
+    except Exception as e:
+        print(f"Error sending notification: {e}")
+
+
+def search_text_in_pdf(filepath: Path, search_text: str) -> list[int]:
     """
     Procura um texto específico em um arquivo PDF.
 
@@ -87,8 +130,8 @@ def search_text_in_pdf(filepath: str, search_text: str) -> list[int]:
     """
     pages_found = []
     try:
-        with open(filepath, "rb") as file:
-            reader = PyPDF2.PdfReader(file)
+        with filepath.open("rb") as file:
+            reader = PdfReader(file)
             for page_num in range(len(reader.pages)):
                 text = reader.pages[page_num].extract_text().lower()
                 if search_text.lower() in text:
@@ -99,7 +142,7 @@ def search_text_in_pdf(filepath: str, search_text: str) -> list[int]:
         return []
 
 
-def search_all_pdfs(search_text: str) -> dict[str, list[int]]:
+def search_all_pdfs(search_text: str) -> list[SearchResult]:
     """
     Procura um texto em todos os PDFs da pasta 'downloads'.
 
@@ -107,25 +150,25 @@ def search_all_pdfs(search_text: str) -> dict[str, list[int]]:
         search_text: Texto a ser procurado em todos os PDFs.
 
     Returns:
-        Dicionário com nome dos arquivos como chaves e lista de páginas como valores.
+        Lista de SearchResult contendo nome dos arquivos e páginas onde o texto foi encontrado.
     """
-    results: dict[str, list[int]] = {}
-    downloads_dir = "downloads"
-    if not os.path.exists(downloads_dir):
+    results: list[SearchResult] = []
+    downloads_dir = Path("downloads")
+    if not downloads_dir.exists():
         print("Downloads directory not found. Please download PDFs first.")
         return results
 
-    pdf_files = [f for f in os.listdir(downloads_dir) if f.endswith(".pdf")]
+    pdf_files = [f.name for f in downloads_dir.glob("*.pdf")]
     if not pdf_files:
         print("No PDF files found in downloads directory.")
         return results
 
-    with tqdm(pdf_files, desc="Searching PDFs", unit="file") as pbar:
+    with tqdm(pdf_files, desc="Procurando PDFs", unit="arquivo") as pbar:
         for pdf_file in pbar:
-            filepath = os.path.join(downloads_dir, pdf_file)
+            filepath = downloads_dir / pdf_file
             pages = search_text_in_pdf(filepath, search_text)
             if pages:
-                results[pdf_file] = pages
+                results.append(SearchResult(filename=pdf_file, pages=pages))
 
     return results
 
@@ -133,11 +176,19 @@ def search_all_pdfs(search_text: str) -> dict[str, list[int]]:
 def main():
     """
     Função principal que executa o fluxo completo do programa:
-    1. Baixa os PDFs do site
-    2. Solicita o texto para busca
-    3. Procura o texto em todos os PDFs
+
+    1. Baixa os PDFs encontrados
+    2. Procura o nome no arquivo .env em todos os PDFs
+    3. Envia notificação via ntfy.sh
     4. Exibe os resultados encontrados
     """
+
+    # Get name from environment variable
+    my_name = getenv("MY_NAME")
+    if not my_name:
+        print("Error: MY_NAME not found in .env file")
+        return
+
     # Step 1: Download PDFs
     url = "https://www.saquarema.rj.gov.br/chamamento-publico/"
     print("\nBaixando arquivos PDF...")
@@ -155,13 +206,13 @@ def main():
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}",
     ) as pbar:
         for link in pbar:
-            filename = f"{link['title']}.pdf".replace("/", "_")
-            filepath = download_pdf(link["url"], filename)
+            filename = f"{link.title}.pdf".replace("/", "_")
+            filepath = download_pdf(link.url, filename)
             if filepath:
                 success_count += 1
             else:
                 failed_count += 1
-                failed_files.append(link["title"])
+                failed_files.append(link.title)
 
     print(f"\n[+] {success_count} arquivos baixados com sucesso")
     if failed_files:
@@ -170,18 +221,23 @@ def main():
             print(f"  - {file}")
 
     # Step 2: Search in PDFs
-    search_text = input("\nDigite o texto que deseja procurar nos PDFs: ")
     print("\nProcurando nos PDFs...")
-    results = search_all_pdfs(search_text)
+    results = search_all_pdfs(my_name)
 
-    # Step 3: Show results and exit
+    # Step 3: Show results and send notification if found
     if results:
-        print("\nTexto encontrado nos seguintes arquivos:")
-        for pdf_file, pages in results.items():
-            print(f"\n[+] {pdf_file}")
-            print(f"    Encontrado na(s) página(s): {', '.join(map(str, pages))}")
+        print("\nNome encontrado nos seguintes arquivos:")
+        notification_message = "Seu nome foi encontrado nos seguintes arquivos:\n\n"
+        for result in results:
+            file_info = (
+                f"{result.filename} (Páginas: {', '.join(map(str, result.pages))})"
+            )
+            print(f"\n[+] {file_info}")
+            notification_message += f"📄 {file_info}\n"
+
+        send_notification(notification_message)
     else:
-        print(f"\nO texto '{search_text}' não foi encontrado em nenhum arquivo PDF.")
+        print(f"\nO nome '{my_name}' não foi encontrado em nenhum arquivo PDF.")
 
 
 if __name__ == "__main__":
