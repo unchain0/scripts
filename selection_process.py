@@ -226,13 +226,19 @@ def main():
     # Step 3: Show results and send notification if found
     if results:
         print("\nNome encontrado nos seguintes arquivos:")
-        notification_message = "Seu nome foi encontrado nos seguintes arquivos:\n\n"
+        notification_message = (
+            f"🚨 Programa Jovem Cidadão 2025\n\n"
+            f"Nome: {my_name}\n"
+            f"Arquivos: {len(results)} • Ocorrências: {sum(len(r.pages) for r in results)}\n\n"
+        )
         for result in results:
             file_info = (
                 f"{result.filename} (Páginas: {', '.join(map(str, result.pages))})"
             )
             print(f"\n[+] {file_info}")
-            notification_message += f"📄 {file_info}\n"
+            notification_message += (
+                f"📄 {result.filename} — páginas {', '.join(map(str, result.pages))}\n"
+            )
 
         send_notification(notification_message)
     else:
