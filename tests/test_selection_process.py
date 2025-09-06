@@ -10,7 +10,7 @@ from selection_process import search_text_in_pdf
 
 
 @dataclass
-class TestCase:
+class CaseData:
     name: str
     file: str
     expected_page: int
@@ -29,17 +29,17 @@ def test_downloads_directory_exists(downloads_dir: Path) -> None:
 
 
 TEST_CASES = [
-    TestCase(
+    CaseData(
         name="SANDERSON SANTOS THEOPHILO CORREA",
         file="CHAMAMENTO PÚBLICO Nº 001_2025 – Convocação 007_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
         expected_page=2,
     ),
-    TestCase(
+    CaseData(
         name="VICTOR HUGO MELO DA SILVA",
         file="CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 04_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
         expected_page=2,
     ),
-    TestCase(
+    CaseData(
         name="BRYAN ANGEL LEITE DOS SANTOS",
         file="CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 01_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
         expected_page=4,
@@ -48,7 +48,7 @@ TEST_CASES = [
 
 
 @pytest.mark.parametrize("test_case", TEST_CASES)
-def test_name_search_in_pdf(test_case: TestCase, downloads_dir: Path) -> None:
+def test_name_search_in_pdf(test_case: CaseData, downloads_dir: Path) -> None:
     """Test that each name is found in the correct file and page"""
     name = test_case.name
     file = test_case.file
