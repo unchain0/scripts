@@ -40,6 +40,9 @@ class SearchResult:
 
 
 load_dotenv()
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+}
 
 
 def get_pdf_links(url: str) -> list[PdfLink]:
@@ -52,7 +55,7 @@ def get_pdf_links(url: str) -> list[PdfLink]:
     Returns:
         Lista de PdfLink contendo URLs e títulos dos PDFs encontrados
     """
-    response = requests.get(url)
+    response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.content, "html.parser")
     links = []
     all_links = soup.find_all("a")
@@ -84,7 +87,7 @@ def download_pdf(url: str, filename: Path) -> Path | None:
     Returns:
         Caminho do arquivo salvo ou None se o download falhar
     """
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, headers=headers)
     if response.status_code == 200:
         downloads_path = Path("downloads")
         downloads_path.mkdir(exist_ok=True)
@@ -154,9 +157,7 @@ def search_all_pdfs(search_text: str) -> list[SearchResult]:
     """
     results: list[SearchResult] = []
     downloads_path = Path("downloads")
-    if not downloads_path.exists():
-        print("Directory 'downloads' not found. Please download PDFs first.")
-        return results
+    downloads_path.mkdir(exist_ok=True)
 
     pdf_files = list(downloads_path.glob("*.pdf"))
     if not pdf_files:
