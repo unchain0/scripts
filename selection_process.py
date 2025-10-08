@@ -173,7 +173,7 @@ def search_all_pdfs(search_text: str) -> list[SearchResult]:
     return results
 
 
-def main():
+def main() -> None:
     """
     Função principal que executa o fluxo completo do programa:
 
