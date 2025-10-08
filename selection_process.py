@@ -57,7 +57,7 @@ def get_pdf_links(url: str) -> list[PdfLink]:
     """
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.content, "html.parser")
-    links = []
+    links: list[PdfLink] = []
     all_links = soup.find_all("a")
 
     for link in all_links:
@@ -131,7 +131,7 @@ def search_text_in_pdf(filepath: Path, search_text: str) -> list[int]:
     Returns:
         Lista de números das páginas onde o texto foi encontrado
     """
-    pages_found = []
+    pages_found: list[int] = []
     try:
         with filepath.open("rb") as file:
             reader = PdfReader(file)
@@ -196,7 +196,7 @@ def main():
 
     success_count = 0
     failed_count = 0
-    failed_files = []
+    failed_files: list[str] = []
 
     with tqdm(
         pdf_links,
