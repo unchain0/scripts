@@ -1,28 +1,27 @@
-"""
-Script que pressiona as teclas Z, X e C automaticamente a cada 10 segundos.
-"""
+"""Script que pressiona as teclas automaticamente a cada X segundos."""
 
+import argparse
 import time
 
 import keyboard
-from enum import Enum
+from string import ascii_lowercase
 
 
-class Key(Enum):
-    Z = "z"
-    X = "x"
-    C = "c"
+def press_keys(keys: list[str]) -> None:
+    """Pressiona as teclas fornecidas em sequência."""
+    if not keys:
+        raise ValueError("Keys list cannot be empty")
 
-
-def press_keys(keys: list[Key]) -> None:
-    """Pressiona as teclas Z, X e C em sequência."""
     for key in keys:
-        keyboard.press_and_release(key.value)
-        print(f"Pressed: {key.value}")
+        if (key := key.lower()) not in ascii_lowercase:
+            raise ValueError(f"Key {key} is not a lowercase letter")
+
+        keyboard.press_and_release(key)
+        print(f"Pressed: {key}")
         time.sleep(0.1)
 
 
-def main(*, seconds: int, keys: list[Key]) -> None:
+def main(*, seconds: int, keys: list[str]) -> None:
     """Loop principal que pressiona as teclas a cada X segundos."""
     print("Starting key presser... Press Ctrl+C to stop")
 
@@ -36,7 +35,27 @@ def main(*, seconds: int, keys: list[Key]) -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Script que pressiona teclas automaticamente em intervalos regulares"
+    )
+    parser.add_argument(
+        "-s",
+        "--seconds",
+        type=int,
+        default=5,
+        help="Intervalo em segundos entre cada execução (padrão: 5)",
+    )
+    parser.add_argument(
+        "-k",
+        "--keys",
+        nargs="+",
+        default=["Z", "X", "C"],
+        help="Teclas a serem pressionadas (padrão: Z X C)",
+    )
+
+    args = parser.parse_args()
+
     main(
-        seconds=10,
-        keys=[Key.Z, Key.X, Key.C],
+        seconds=args.seconds,
+        keys=args.keys,
     )
