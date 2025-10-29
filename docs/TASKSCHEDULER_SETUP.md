@@ -156,6 +156,11 @@ Se solicitado, insira a senha do usuário do Windows para confirmar.
 
 - ✅ Verifique se o caminho do arquivo VBS está correto
 - ✅ Confirme que `uv` está instalado e no PATH do sistema
+
+   ```bash
+   uv --version
+   ```
+
 - ✅ Teste o arquivo VBS manualmente (clique duas vezes nele)
 - ✅ Verifique se o usuário tem permissões para executar o script
 - ✅ Revise os logs no histórico da tarefa
