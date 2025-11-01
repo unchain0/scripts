@@ -6,7 +6,7 @@ from urllib.parse import quote
 words = input("Enter the words to search (comma separated): ").split(",")
 
 TPL = Template(
-    "https://dicionario.reverso.net/ingles-definicao/${word}#translation=portuguese"
+    "https://dicionario.reverso.net/ingles-definicao/${word}#translation=brazilian"
 )
 
 
