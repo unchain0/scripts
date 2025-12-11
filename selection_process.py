@@ -175,7 +175,7 @@ def search_all_pdfs(search_text: str) -> list[SearchResult]:
 
 def main() -> None:
     """
-    Função principal que executa o fluxo completo do programa:
+    Função principal que executa o fluxo completo do programa.
 
     1. Baixa os PDFs encontrados
     2. Procura o nome no arquivo .env em todos os PDFs
@@ -207,8 +207,7 @@ def main() -> None:
     ) as pbar:
         for link in pbar:
             filename = f"{link.title}.pdf".replace("/", "_")
-            filepath = download_pdf(link.url, filename)
-            if filepath:
+            if download_pdf(link.url, Path(filename)):
                 success_count += 1
             else:
                 failed_count += 1
