@@ -46,3 +46,9 @@ module = [
     "speech_recognition.*",
 ]
 ignore_missing_imports = true
+
+[tool.ruff.lint]
+select = ["D400"]
+
+[tool.mypy]
+strict = true
