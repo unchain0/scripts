@@ -1,4 +1,9 @@
 def printTable(data: list[list[str]]) -> None:
+    """Prints a table from a list of lists of strings.
+
+    Args:
+        data (list[list[str]]): The data to be printed.
+    """
     colWidths = [0] * len(data)
     for i, j in enumerate(data):
         maxLen = len(max(j, key=len))
