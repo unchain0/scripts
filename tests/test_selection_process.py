@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from scripts.selection_process import search_text_in_pdf
+sys.path.append(str(Path(__file__).parents[1]))
 
-sys.path.append(str(Path(__file__).parent.parent))
+from scripts.selection_process import search_text_in_pdf
 
 
 @dataclass
