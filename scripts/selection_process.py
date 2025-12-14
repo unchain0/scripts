@@ -182,14 +182,10 @@ def main() -> None:
     3. Envia notificação via ntfy.sh
     4. Exibe os resultados encontrados
     """
-
-    # Get name from environment variable
-    my_name = getenv("MY_NAME")
-    if not my_name:
+    if not (my_name := getenv("MY_NAME")):
         print("Error: Environment variable MY_NAME not found")
         return
 
-    # Step 1: Download PDFs
     url = "https://www.saquarema.rj.gov.br/chamamento-publico/"
     print("\nBaixando arquivos PDF...")
     pdf_links = get_pdf_links(url)
@@ -206,12 +202,11 @@ def main() -> None:
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}",
     ) as pbar:
         for link in pbar:
-            filename = f"{link.title}.pdf".replace("/", "_")
-            if download_pdf(link.url, Path(filename)):
+            if download_pdf(link.url, Path(f"{link.title}.pdf".replace("/", "_"))):
                 success_count += 1
-            else:
-                failed_count += 1
-                failed_files.append(link.title)
+                continue
+            failed_count += 1
+            failed_files.append(link.title)
 
     print(f"\n[+] {success_count} arquivos baixados com sucesso")
     if failed_files:
@@ -219,26 +214,20 @@ def main() -> None:
         for file in failed_files:
             print(f"  - {file}")
 
-    # Step 2: Search in PDFs
     print("\nProcurando nos PDFs...")
     results = search_all_pdfs(my_name)
 
-    # Step 3: Show results and send notification if found
     if results:
         print("\nNome encontrado nos seguintes arquivos:")
         notification_message = (
             f"🚨 Programa Jovem Cidadão 2025\n\n"
-            f"Nome: {my_name}\n"
+            f"Nome: {my_name[:50]}...\n"
             f"Arquivos: {len(results)} • Ocorrências: {sum(len(r.pages) for r in results)}\n\n"
         )
         for result in results:
-            file_info = (
-                f"{result.filename} (Páginas: {', '.join(map(str, result.pages))})"
-            )
-            print(f"\n[+] {file_info}")
-            notification_message += (
-                f"📄 {result.filename} — páginas {', '.join(map(str, result.pages))}\n"
-            )
+            pages = ", ".join(map(str, result.pages))
+            notification_message += f"📄 {result.filename} — páginas {pages}\n"
+            print(f"\n[+] {notification_message}")
 
         send_notification(notification_message)
     else:
