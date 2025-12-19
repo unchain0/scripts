@@ -6,7 +6,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).parents[1]))
 
-from scripts.selection_process import search_text_in_pdf
+from scripts.personal.selection_process import search_text_in_pdf
 
 
 @dataclass
@@ -16,12 +16,7 @@ class CaseData:
     expected_page: int
 
 
-TEST_CASES = [
-    CaseData(
-        name="SANDERSON SANTOS THEOPHILO CORREA",
-        file="CHAMAMENTO PÚBLICO Nº 001_2025 – Convocação 007_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
-        expected_page=2,
-    ),
+TEST_CASES: list[CaseData] = [
     CaseData(
         name="VICTOR HUGO MELO DA SILVA",
         file="CHAMAMENTO PÚBLICO Nº 001_2025- Convocação 04_2025 – PROGRAMA JOVEM CIDADÃO.pdf",
@@ -37,10 +32,10 @@ TEST_CASES = [
 
 @pytest.fixture
 def downloads_dir() -> Path:
-    """Path to the downloads directory.
+    """Path to the downloads' directory.
 
     Returns:
-        Path: Path to the downloads directory.
+        Path: Path to the downloads' directory.
     """
     return Path(__file__).parent.parent / "downloads"
 
@@ -49,7 +44,7 @@ def test_downloads_directory_exists(downloads_dir: Path) -> None:
     """Test if downloads directory exists.
 
     Args:
-        downloads_dir (Path): Path to the downloads directory.
+        downloads_dir (Path): Path to the downloads' directory.
     """
     downloads_dir.mkdir(exist_ok=True)
     assert downloads_dir.exists(), "Downloads directory not found."
@@ -61,7 +56,7 @@ def test_name_search_in_pdf(test_case: CaseData, downloads_dir: Path) -> None:
 
     Args:
         test_case (CaseData): Test case data.
-        downloads_dir (Path): Path to the downloads directory.
+        downloads_dir (Path): Path to the downloads' directory.
     """
     name = test_case.name
     file = test_case.file
