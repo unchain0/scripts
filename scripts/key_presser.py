@@ -2,13 +2,18 @@
 
 import argparse
 import time
-
-import keyboard
 from string import ascii_lowercase
 
+import keyboard
 
-def press_keys(keys: list[str]) -> None:
-    """Pressiona as teclas fornecidas em sequência."""
+
+def press_keys(keys: list[str], press_interval: int = 1) -> None:
+    """Pressiona as teclas fornecidas em sequência.
+
+    Args:
+        keys (list[str]): Lista de teclas para pressionar
+        press_interval (int, optional): Time a segundo para pressionar. Defaults to 1.
+    """
     if not keys:
         raise ValueError("Keys list cannot be empty")
 
@@ -18,25 +23,33 @@ def press_keys(keys: list[str]) -> None:
 
         keyboard.press_and_release(key)
         print(f"Pressed: {key}")
-        time.sleep(0.1)
+        time.sleep(press_interval)
 
 
-def main(*, seconds: int, keys: list[str]) -> None:
-    """Loop principal que pressiona as teclas a cada X segundos."""
+def main(*, wait: int, keys: list[str]) -> None:
+    """Loop principal que pressiona as teclas a cada X segundos.
+
+    Args:
+        wait (int): Tempo de espera em segundos até outra execução
+        keys (list[str]): Lista de teclas para pressionar
+    """
     print("Starting key presser... Press Ctrl+C to stop")
 
     try:
         while True:
             press_keys(keys=keys)
-            print(f"Waiting {seconds} seconds...")
-            time.sleep(seconds)
+            print(f"Waiting {wait} seconds...")
+            time.sleep(wait)
     except KeyboardInterrupt:
         print("\nStopped by user")
 
 
-if __name__ == "__main__":
+def parse_args() -> argparse.Namespace:
+    """Parse os argumentos de entrada."""
     parser = argparse.ArgumentParser(
-        description="Script que pressiona teclas automaticamente em intervalos regulares"
+        prog="key_presser",
+        description="Script que pressiona teclas automaticamente em intervalos regulares",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "-s",
@@ -52,10 +65,13 @@ if __name__ == "__main__":
         default=["Z", "X", "C"],
         help="Teclas a serem pressionadas (padrão: Z X C)",
     )
+    return parser.parse_args()
 
-    args = parser.parse_args()
+
+if __name__ == "__main__":
+    args = parse_args()
 
     main(
-        seconds=args.seconds,
+        wait=args.seconds,
         keys=args.keys,
     )
