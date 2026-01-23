@@ -107,6 +107,15 @@ class LogRecord:
 
 
 @dataclass(slots=True)
+class ProgressUpdate:
+    current: int
+    total: int
+    rated: int
+    skipped: int
+    last_title: str
+
+
+@dataclass(slots=True)
 class RatingResult:
     """Resultado do processo de avaliação."""
 
@@ -306,17 +315,15 @@ class LiderBPOApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("LiderBPO - Avaliador de Base de Conhecimento")
-        self.geometry("700x500")
+        self.geometry("700x650")
         self.configure(bg=COLORS["bg_light"])
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        # Header com logo
         header = tk.Frame(self, bg=COLORS["primary_blue"], height=80)
         header.pack(fill="x")
         header.pack_propagate(False)
 
-        # Carregar logo
         try:
             logo_path = get_asset_path("logo_white.png")
             if logo_path.exists():
@@ -328,7 +335,6 @@ class LiderBPOApp(tk.Tk):
                 )
                 logo_label.pack(pady=15)
         except Exception:
-            # Fallback: texto
             tk.Label(
                 header,
                 text="LiderBPO",
@@ -337,30 +343,90 @@ class LiderBPOApp(tk.Tk):
                 fg=COLORS["white"],
             ).pack(pady=20)
 
-        # Container principal
         self._main_container = ttk.Frame(self)
         self._main_container.pack(fill="both", expand=True)
 
-        # Login frame (estado inicial)
+        self._dash_frame = ttk.Frame(self._main_container, padding=20)
+
+        stats_container = ttk.Frame(self._dash_frame)
+        stats_container.pack(fill="x", pady=(0, 20))
+
+        self._total_var = tk.StringVar(value="0")
+        self._rated_var = tk.StringVar(value="0")
+        self._skipped_var = tk.StringVar(value="0")
+
+        self._create_stat_card(stats_container, "Total", self._total_var, 0)
+        self._create_stat_card(stats_container, "Avaliados", self._rated_var, 1)
+        self._create_stat_card(stats_container, "Pulados", self._skipped_var, 2)
+
+        ttk.Label(
+            self._dash_frame, text="Progresso Geral:", font=("Segoe UI", 10)
+        ).pack(anchor="w")
+        self._progress_var = tk.DoubleVar()
+        self._progress_bar = ttk.Progressbar(
+            self._dash_frame,
+            variable=self._progress_var,
+            maximum=100,
+            length=400,
+            mode="determinate",
+        )
+        self._progress_bar.pack(fill="x", pady=(5, 20))
+
+        self._log_terminal = LogTerminal(self._dash_frame)
+        self._log_terminal.pack(fill="both", expand=True)
+
         self._login_frame = LoginFrame(self._main_container, self._on_login)
         self._login_frame.pack(fill="both", expand=True)
 
-        # Log terminal (oculto inicialmente)
-        self._log_terminal = LogTerminal(self._main_container)
+    def _create_stat_card(self, parent, label, variable, column):
+        card = tk.Frame(
+            parent, bg=COLORS["white"], bd=1, relief="solid", padx=15, pady=10
+        )
+        card.grid(row=0, column=column, padx=5, sticky="nsew")
+        parent.columnconfigure(column, weight=1)
+
+        tk.Label(
+            card,
+            text=label,
+            font=("Segoe UI", 10),
+            bg=COLORS["white"],
+            fg=COLORS["text_dark"],
+        ).pack()
+        tk.Label(
+            card,
+            textvariable=variable,
+            font=("Segoe UI", 16, "bold"),
+            bg=COLORS["white"],
+            fg=COLORS["primary_blue"],
+        ).pack()
 
     def _on_login(self, email: str, password: str) -> None:
         """Callback quando usuário faz login."""
-        # Transição para estado running
         self._login_frame.pack_forget()
-        self._log_terminal.pack(fill="both", expand=True, padx=10, pady=10)
+        self._dash_frame.pack(fill="both", expand=True)
         self._log_terminal.start_logging()
 
-        # Log inicial
         logger.info(f"Starting with user: {email}")
 
-        # Inicia worker em background
-        worker = RatingWorker(email, password, on_complete=self._on_worker_complete)
+        worker = RatingWorker(
+            email,
+            password,
+            on_complete=self._on_worker_complete,
+            on_progress=self._on_progress,
+        )
         worker.start()
+
+    def _on_progress(self, update: ProgressUpdate) -> None:
+        """Atualiza a interface com o progresso do worker."""
+        self._total_var.set(str(update.total))
+        self._rated_var.set(str(update.rated))
+        self._skipped_var.set(str(update.skipped))
+
+        if update.total > 0:
+            percent = (update.current / update.total) * 100
+            self._progress_var.set(percent)
+
+        self.update_idletasks()
 
     def _on_worker_complete(self, result: RatingResult) -> None:
         """Callback quando worker termina."""
@@ -491,8 +557,6 @@ class KnowledgeBaseScraper:
 
 
 class RatingWorker(threading.Thread):
-    """Worker thread para avaliação em background."""
-
     def __init__(
         self,
         email: str,
@@ -500,11 +564,13 @@ class RatingWorker(threading.Thread):
         /,
         *,
         on_complete: Callable[[RatingResult], None],
+        on_progress: Callable[[ProgressUpdate], None] | None = None,
     ):
         super().__init__(daemon=True)
         self._email = email
         self._password = password
         self._on_complete = on_complete
+        self._on_progress = on_progress
 
     def run(self) -> None:
         result = self._execute()
@@ -522,7 +588,6 @@ class RatingWorker(threading.Thread):
                 browser = p.chromium.launch(headless=True)
                 auth = AuthManager(self._email, self._password, STORAGE_FILE)
 
-                # Login ou carregar sessão
                 if auth.has_valid_session():
                     logger.info("Loading saved session...")
                     context = auth.load_session(browser)
@@ -539,7 +604,6 @@ class RatingWorker(threading.Thread):
 
                 scraper = KnowledgeBaseScraper(page)
 
-                # Coletar artigos
                 if articles := scraper.collect_all_article_urls():
                     logger.info(f"Found {len(articles)} articles")
                     total = len(articles)
@@ -547,7 +611,6 @@ class RatingWorker(threading.Thread):
                     logger.warning("No articles found")
                     return RatingResult(0, 0, 0)
 
-                # Processar cada artigo
                 for i, article in enumerate(articles, 1):
                     page.goto(article.url)
                     title = article.title
@@ -563,6 +626,17 @@ class RatingWorker(threading.Thread):
                             scraper.rate_article()
                             logger.success(f'[{i}/{total}] "{title}" - RATED ✓')
                             rated += 1
+
+                    if self._on_progress:
+                        self._on_progress(
+                            ProgressUpdate(
+                                current=i,
+                                total=total,
+                                rated=rated,
+                                skipped=skipped,
+                                last_title=title,
+                            )
+                        )
 
                 browser.close()
 
@@ -583,3 +657,8 @@ class RatingWorker(threading.Thread):
         except Exception as e:
             logger.exception("Unexpected error")
             return RatingResult(rated, skipped, total, success=False, error=str(e))
+
+
+if __name__ == "__main__":
+    app = LiderBPOApp()
+    app.mainloop()
