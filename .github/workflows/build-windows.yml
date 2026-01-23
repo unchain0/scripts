@@ -1,9 +1,13 @@
-name: Build Windows Executable
+name: Build and Release
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -41,8 +45,19 @@ jobs:
             --name "LiderBPO-Rater" `
             scripts/work/rating_lider.py
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: LiderBPO-Rater-Windows
-          path: dist/LiderBPO-Rater.exe
+          files: dist/LiderBPO-Rater.exe
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## LiderBPO Knowledge Base Auto-Rater
+            
+            Versão automática gerada a partir da tag `${{ github.ref_name }}`.
+            
+            ### Alterações
+            Verifique o histórico de commits para mais detalhes.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
