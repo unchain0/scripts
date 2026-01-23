@@ -1,4 +1,10 @@
-"""Script para avaliar automaticamente artigos da base de conhecimento LiderBPO."""
+"""Script para avaliar automaticamente artigos da base de conhecimento LiderBPO.
+
+Build executável standalone:
+    cd scripts/work && ./build.sh
+
+O executável inclui o Chromium embutido, não precisa de instalação adicional.
+"""
 
 import os
 import queue
@@ -10,6 +16,9 @@ from pathlib import Path
 from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import Callable
+
+# Configura Playwright para usar browsers embutidos no pacote
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
