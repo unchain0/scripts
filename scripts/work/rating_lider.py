@@ -17,8 +17,8 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import Callable
 
-# Configura Playwright para usar browsers embutidos no pacote
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+if "PLAYWRIGHT_BROWSERS_PATH" in os.environ:
+    del os.environ["PLAYWRIGHT_BROWSERS_PATH"]
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
@@ -582,10 +582,10 @@ class RatingWorker(threading.Thread):
         total = 0
 
         try:
-            logger.info("Starting browser...")
+            logger.info("Starting browser (Edge)...")
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=True, channel="msedge")
                 auth = AuthManager(self._email, self._password, STORAGE_FILE)
 
                 if auth.has_valid_session():

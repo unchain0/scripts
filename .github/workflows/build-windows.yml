@@ -27,19 +27,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Install Playwright Chromium
-        run: |
-          $env:PLAYWRIGHT_BROWSERS_PATH = "0"
-          uv run playwright install chromium
-
       - name: Build Executable
         run: |
-          $PLAYWRIGHT_PATH = ".\.venv\Lib\site-packages\playwright"
           uv run pyinstaller `
             --onefile `
             --windowed `
             --add-data "scripts/work/assets;assets" `
-            --add-data "$PLAYWRIGHT_PATH\driver;playwright\driver" `
             --hidden-import playwright `
             --hidden-import playwright.sync_api `
             --name "LiderBPO-Rater" `
