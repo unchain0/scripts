@@ -13,4 +13,7 @@ wheels/
 data/
 downloads/
 .env
-scripts/work/
+scripts/work/*
+!scripts/work/build.sh
+!scripts/work/assets/
+.suit_storage.json

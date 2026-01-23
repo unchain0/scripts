@@ -3,38 +3,41 @@ name = "scripts"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
-    "aiohttp>=3.13.2",
-    "discord-py>=2.6.4",
-    "flask>=3.1.2",
-    "genanki>=0.13.1",
-    "jupyter>=1.1.1",
-    "keyboard>=0.13.5",
-    "loguru>=0.7.3",
-    "moviepy>=2.2.1",
-    "pandas>=2.3.1",
-    "pydub>=0.25.1",
-    "pypdf>=6.0.0",
-    "pypdf2>=3.0.1",
-    "pytest>=8.4.1",
-    "python-dotenv>=1.1.1",
-    "requests>=2.32.4",
-    "speechrecognition>=3.14.3",
-    "tenacity>=9.1.2",
-    "tqdm>=4.67.1",
-    "yfinance>=0.2.65",
+  "aiohttp>=3.13.2",
+  "discord-py>=2.6.4",
+  "flask>=3.1.2",
+  "genanki>=0.13.1",
+  "jupyter>=1.1.1",
+  "keyboard>=0.13.5",
+  "loguru>=0.7.3",
+  "moviepy>=2.2.1",
+  "pandas>=2.3.1",
+  "pillow>=11.3.0",
+  "playwright>=1.57.0",
+  "pydub>=0.25.1",
+  "pypdf>=6.0.0",
+  "pypdf2>=3.0.1",
+  "pytest>=8.4.1",
+  "python-dotenv>=1.1.1",
+  "requests>=2.32.4",
+  "speechrecognition>=3.14.3",
+  "tenacity>=9.1.2",
+  "tqdm>=4.67.1",
+  "yfinance>=0.2.65",
 ]
 
 [dependency-groups]
 dev = [
-    "pandas-stubs>=2.3.2.250827",
-    "pre-commit>=4.3.0",
-    "ruff>=0.12.9",
-    "ty>=0.0.4",
-    "types-keyboard>=0.13.2.20250801",
-    "types-requests>=2.32.4.20250809",
-    "types-tqdm>=4.67.0.20250809",
+  "pandas-stubs>=2.3.2.250827",
+  "pre-commit>=4.3.0",
+  "pyinstaller>=6.18.0",
+  "ruff>=0.12.9",
+  "ty>=0.0.4",
+  "types-keyboard>=0.13.2.20250801",
+  "types-requests>=2.32.4.20250809",
+  "types-tqdm>=4.67.0.20250809",
 ]
 
 [tool.ruff.lint]
