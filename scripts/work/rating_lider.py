@@ -612,19 +612,30 @@ class RatingWorker(threading.Thread):
 
                 auth = AuthManager(self._email, self._password, STORAGE_FILE)
 
+                context = None
+                page = None
+
                 if auth.has_valid_session():
                     logger.info("Loading saved session...")
                     context = auth.load_session(browser)
-                else:
+                    page = context.new_page()
+                    page.goto(KB_URL)
+
+                    if "login" in page.url.lower():
+                        logger.warning("Session expired, forcing new login...")
+                        context.close()
+                        context = None
+                        page = None
+                        STORAGE_FILE.unlink(missing_ok=True)
+
+                if context is None:
                     logger.info(f"Logging in as {self._email}...")
                     context = browser.new_context()
                     page = context.new_page()
                     auth.login(page)
                     auth.save_session(context)
-                    logger.success("Session saved ✓")
-
-                page = context.new_page()
-                page.goto(KB_URL)
+                    logger.success("Session saved")
+                    page.goto(KB_URL)
 
                 scraper = KnowledgeBaseScraper(page)
 

@@ -378,8 +378,8 @@ class TestRatingWorker:
         worker = RatingWorker("test@example.com", "password", on_complete=callback)
         worker._execute()
 
-        # Deve ter logado "Starting browser..."
-        assert any("Starting browser" in msg for _, msg in log_messages)
+        # Deve ter logado "Iniciando navegador..."
+        assert any("Iniciando navegador" in msg for _, msg in log_messages)
 
     def test_worker_handles_errors(self, monkeypatch: pytest.MonkeyPatch):
         """Verifica que worker trata erros e retorna RatingResult com success=False."""
