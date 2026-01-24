@@ -582,10 +582,34 @@ class RatingWorker(threading.Thread):
         total = 0
 
         try:
-            logger.info("Starting browser (Edge)...")
+            logger.info("Iniciando navegador...")
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, channel="msedge")
+                browser = None
+                # Ordem de preferência para navegadores instalados no sistema
+                channels = ["msedge", "chrome", "chromium"]
+
+                for channel in channels:
+                    try:
+                        logger.debug(f"Tentando canal: {channel}")
+                        browser = p.chromium.launch(headless=True, channel=channel)
+                        logger.info(f"Navegador iniciado usando: {channel}")
+                        break
+                    except Exception as e:
+                        logger.debug(f"Falha ao iniciar {channel}: {e}")
+                        continue
+
+                if not browser:
+                    try:
+                        logger.warning(
+                            "Canais específicos falharam. Tentando lançamento padrão..."
+                        )
+                        browser = p.chromium.launch(headless=True)
+                    except Exception:
+                        raise NetworkError(
+                            "Nenhum navegador compatível encontrado (Edge/Chrome/Chromium)."
+                        )
+
                 auth = AuthManager(self._email, self._password, STORAGE_FILE)
 
                 if auth.has_valid_session():
