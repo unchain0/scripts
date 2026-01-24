@@ -43,13 +43,7 @@ jobs:
         with:
           files: dist/LiderBPO-Rater.exe
           name: Release ${{ github.ref_name }}
-          body: |
-            ## LiderBPO Knowledge Base Auto-Rater
-            
-            Versão automática gerada a partir da tag `${{ github.ref_name }}`.
-            
-            ### Alterações
-            Verifique o histórico de commits para mais detalhes.
+          generate_release_notes: true
           draft: false
           prerelease: false
         env:
