@@ -1,5 +1,7 @@
 """Script para avaliar automaticamente artigos da base de conhecimento LiderBPO.
 
+Author: Felippe Menezes - GHEF
+
 Build executável standalone:
     cd scripts/work && ./build.sh
 
@@ -24,11 +26,37 @@ from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from loguru import logger
 from PIL import Image, ImageTk
+import keyring
 
 BASE_URL = "https://liderbpo.app.br"
 KB_URL = "https://liderbpo.app.br/politicas-e-procedimentos/base-conhecimento"
 LOGIN_URL = "https://liderbpo.app.br/login"
 STORAGE_FILE = Path(".suit_storage.json")
+KEYRING_SERVICE = "liderbpo-rating"
+
+
+class CredentialsManager:
+    @staticmethod
+    def save(email: str, password: str) -> None:
+        keyring.set_password(KEYRING_SERVICE, "email", email)
+        keyring.set_password(KEYRING_SERVICE, email, password)
+
+    @staticmethod
+    def load() -> tuple[str, str] | None:
+        email = keyring.get_password(KEYRING_SERVICE, "email")
+        if not email:
+            return None
+        password = keyring.get_password(KEYRING_SERVICE, email)
+        if not password:
+            return None
+        return email, password
+
+    @staticmethod
+    def clear() -> None:
+        email = keyring.get_password(KEYRING_SERVICE, "email")
+        if email:
+            keyring.delete_password(KEYRING_SERVICE, email)
+            keyring.delete_password(KEYRING_SERVICE, "email")
 
 
 class ConfigError(Exception):
@@ -127,18 +155,19 @@ class RatingResult:
 
 
 class LoguruSink:
-    """Sink thread-safe que envia logs para queue."""
-
     def __init__(self, log_queue: queue.Queue[LogRecord], /):
         self._queue = log_queue
 
     def __call__(self, message) -> None:
         record = message.record
+        msg = record["message"]
+        if ":" in msg:
+            msg = msg.split(":")[0]
         self._queue.put(
             LogRecord(
                 time=record["time"].strftime("%H:%M:%S"),
                 level=record["level"].name,
-                message=record["message"],
+                message=msg,
             )
         )
 
@@ -203,12 +232,16 @@ def get_asset_path(filename: str) -> Path:
 
 
 class LoginFrame(ttk.Frame):
-    """Frame de login com logo e campos de credenciais."""
-
     def __init__(self, parent, on_login, /):
         super().__init__(parent)
         self._on_login = on_login
         self._setup_ui()
+        self._load_saved_credentials()
+
+    def _load_saved_credentials(self) -> None:
+        if creds := CredentialsManager.load():
+            self._email_var.set(creds[0])
+            self._password_var.set(creds[1])
 
     def _setup_ui(self) -> None:
         # Container principal
@@ -216,17 +249,20 @@ class LoginFrame(ttk.Frame):
         container.pack(expand=True)
 
         # Email
-        ttk.Label(container, text="E-mail:", font=("Segoe UI", 11)).pack(
+        ttk.Label(container, text="E-mail:", font=("TkDefaultFont", 11)).pack(
             anchor="w", pady=(0, 5)
         )
         self._email_var = tk.StringVar()
         self._email_entry = ttk.Entry(
-            container, textvariable=self._email_var, width=40, font=("Segoe UI", 11)
+            container,
+            textvariable=self._email_var,
+            width=40,
+            font=("TkDefaultFont", 11),
         )
         self._email_entry.pack(pady=(0, 15))
 
         # Senha
-        ttk.Label(container, text="Senha:", font=("Segoe UI", 11)).pack(
+        ttk.Label(container, text="Senha:", font=("TkDefaultFont", 11)).pack(
             anchor="w", pady=(0, 5)
         )
         self._password_var = tk.StringVar()
@@ -234,7 +270,7 @@ class LoginFrame(ttk.Frame):
             container,
             textvariable=self._password_var,
             width=40,
-            font=("Segoe UI", 11),
+            font=("TkDefaultFont", 11),
             show="•",
         )
         self._password_entry.pack(pady=(0, 20))
@@ -243,7 +279,7 @@ class LoginFrame(ttk.Frame):
         self._login_btn = tk.Button(
             container,
             text="Entrar",
-            font=("Segoe UI", 12, "bold"),
+            font=("TkDefaultFont", 12, "bold"),
             bg=COLORS["accent_blue"],
             fg=COLORS["white"],
             activebackground=COLORS["primary_blue"],
@@ -315,7 +351,7 @@ class LiderBPOApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("LiderBPO - Avaliador de Base de Conhecimento")
-        self.geometry("700x650")
+        self.geometry("850x650")
         self.configure(bg=COLORS["bg_light"])
         self._setup_ui()
 
@@ -338,7 +374,7 @@ class LiderBPOApp(tk.Tk):
             tk.Label(
                 header,
                 text="LiderBPO",
-                font=("Segoe UI", 20, "bold"),
+                font=("TkDefaultFont", 20, "bold"),
                 bg=COLORS["primary_blue"],
                 fg=COLORS["white"],
             ).pack(pady=20)
@@ -360,7 +396,7 @@ class LiderBPOApp(tk.Tk):
         self._create_stat_card(stats_container, "Pulados", self._skipped_var, 2)
 
         ttk.Label(
-            self._dash_frame, text="Progresso Geral:", font=("Segoe UI", 10)
+            self._dash_frame, text="Progresso Geral:", font=("TkDefaultFont", 10)
         ).pack(anchor="w")
         self._progress_var = tk.DoubleVar()
         self._progress_bar = ttk.Progressbar(
@@ -378,6 +414,16 @@ class LiderBPOApp(tk.Tk):
         self._login_frame = LoginFrame(self._main_container, self._on_login)
         self._login_frame.pack(fill="both", expand=True)
 
+        footer = tk.Frame(self, bg=COLORS["bg_light"])
+        footer.pack(fill="x", side="bottom")
+        tk.Label(
+            footer,
+            text="Felippe Menezes - GHEF",
+            font=("TkDefaultFont", 8),
+            bg=COLORS["bg_light"],
+            fg="#9CA3AF",
+        ).pack(pady=5)
+
     def _create_stat_card(self, parent, label, variable, column):
         card = tk.Frame(
             parent, bg=COLORS["white"], bd=1, relief="solid", padx=15, pady=10
@@ -388,25 +434,25 @@ class LiderBPOApp(tk.Tk):
         tk.Label(
             card,
             text=label,
-            font=("Segoe UI", 10),
+            font=("TkDefaultFont", 10),
             bg=COLORS["white"],
             fg=COLORS["text_dark"],
         ).pack()
         tk.Label(
             card,
             textvariable=variable,
-            font=("Segoe UI", 16, "bold"),
+            font=("TkDefaultFont", 16, "bold"),
             bg=COLORS["white"],
             fg=COLORS["primary_blue"],
         ).pack()
 
     def _on_login(self, email: str, password: str) -> None:
-        """Callback quando usuário faz login."""
         self._login_frame.pack_forget()
         self._dash_frame.pack(fill="both", expand=True)
         self._log_terminal.start_logging()
 
-        logger.info(f"Starting with user: {email}")
+        CredentialsManager.save(email, password)
+        logger.info(f"Starting with user")
 
         worker = RatingWorker(
             email,
@@ -469,42 +515,81 @@ class KnowledgeBaseScraper:
     def __init__(self, page, /):
         self._page = page
 
-    def collect_all_article_urls(self) -> list[ArticleInfo]:
-        """Coleta todos os URLs de artigos de todas as páginas."""
+    def collect_all_article_urls(self, max_pages: int = 50) -> list[ArticleInfo]:
         articles: list[ArticleInfo] = []
+        current_page = 0
+        previous_first_url: str | None = None
 
-        while True:
-            # Aguarda carregamento
-            loading = self._page.get_by_text("Carregando...")
-            if loading.count() > 0:
-                loading.first.wait_for(state="hidden", timeout=10000)
+        logger.info("Collecting article URLs...")
 
-            # Coleta artigos da página atual
-            links = self._page.get_by_role("link", name="Visualizar").all()
-            for link in links:
-                href = link.get_attribute("href")
-                if href:
-                    # URL completa
-                    url = href if href.startswith("http") else f"{BASE_URL}{href}"
-                    # Tenta extrair título do card pai
-                    try:
-                        card = link.locator(
-                            "xpath=ancestor::div[contains(@class, 'card')]"
-                        )
-                        title_elem = card.locator("h3, h4, .card-title").first
-                        title = title_elem.text_content() or "Unknown"
-                    except Exception:
-                        title = "Unknown"
-                    articles.append(ArticleInfo(url=url, title=title.strip()))
+        while current_page < max_pages:
+            current_page += 1
+            logger.debug(f"Processing page {current_page}...")
 
-            # Verifica se há próxima página
-            next_btn = self._page.get_by_role("button", name="»")
-            if next_btn.count() == 0 or not next_btn.is_enabled():
+            self._wait_for_table_update(previous_first_url)
+
+            page_articles = self._page.evaluate("""
+                () => {
+                    const results = [];
+                    const rows = document.querySelectorAll('table tbody tr');
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length > 0) {
+                            const titleCell = cells[0];
+                            const title = titleCell ? titleCell.textContent.trim() : 'Unknown';
+                            const link = row.querySelector('a[href*="/artigo/"]');
+                            if (link) {
+                                results.push({ url: link.href, title });
+                            }
+                        }
+                    });
+                    return results;
+                }
+            """)
+
+            if page_articles:
+                previous_first_url = page_articles[0]["url"]
+
+            for item in page_articles:
+                articles.append(ArticleInfo(url=item["url"], title=item["title"]))
+
+            logger.debug(f"Page {current_page}: found {len(page_articles)} articles")
+
+            next_btn = self._page.locator(
+                'button:has-text("›"):not(:has-text("»")):not([disabled])'
+            )
+            if next_btn.count() == 0:
+                logger.debug("No enabled next button found")
                 break
-            next_btn.click()
-            self._page.wait_for_load_state("networkidle")
 
+            next_btn.first.click()
+
+        logger.info(f"Collected {len(articles)} articles from {current_page} pages")
         return articles
+
+    def _wait_for_table_update(self, previous_first_url: str | None) -> None:
+        try:
+            loading = self._page.locator('text="Carregando..."')
+            loading.wait_for(state="visible", timeout=2000)
+            loading.wait_for(state="hidden", timeout=30000)
+        except Exception:
+            pass
+
+        self._page.locator('table tbody tr a[href*="/artigo/"]').first.wait_for(
+            state="visible", timeout=10000
+        )
+
+        if previous_first_url:
+            for _ in range(50):
+                current_first = self._page.evaluate("""
+                    () => {
+                        const link = document.querySelector('table tbody tr a[href*="/artigo/"]');
+                        return link ? link.href : null;
+                    }
+                """)
+                if current_first and current_first != previous_first_url:
+                    break
+                self._page.wait_for_timeout(100)
 
     def is_already_rated(self) -> bool:
         """Verifica se o artigo já foi avaliado."""
@@ -595,9 +680,16 @@ class RatingWorker(threading.Thread):
                         browser = p.chromium.launch(headless=True, channel=channel)
                         logger.info(f"Navegador iniciado usando: {channel}")
                         break
-                    except Exception as e:
-                        logger.debug(f"Falha ao iniciar {channel}: {e}")
+                    except Exception:
                         continue
+
+                if not browser:
+                    try:
+                        logger.debug("Tentando canal: firefox")
+                        browser = p.firefox.launch(headless=True)
+                        logger.info("Navegador iniciado usando: firefox")
+                    except Exception:
+                        pass
 
                 if not browser:
                     try:
@@ -619,7 +711,8 @@ class RatingWorker(threading.Thread):
                     logger.info("Loading saved session...")
                     context = auth.load_session(browser)
                     page = context.new_page()
-                    page.goto(KB_URL)
+                    page.goto(KB_URL, wait_until="networkidle")
+                    logger.debug(f"Current URL after session load: {page.url}")
 
                     if "login" in page.url.lower():
                         logger.warning("Session expired, forcing new login...")
@@ -635,7 +728,14 @@ class RatingWorker(threading.Thread):
                     auth.login(page)
                     auth.save_session(context)
                     logger.success("Session saved")
-                    page.goto(KB_URL)
+
+                assert page is not None
+
+                if page.url != KB_URL:
+                    logger.info("Navigating to knowledge base...")
+                    page.goto(KB_URL, wait_until="networkidle")
+                else:
+                    logger.debug("Already on knowledge base page, skipping navigation")
 
                 scraper = KnowledgeBaseScraper(page)
 

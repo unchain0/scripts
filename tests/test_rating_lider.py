@@ -157,80 +157,173 @@ from scripts.work.rating_lider import (
 
 
 class TestKnowledgeBaseScraper:
-    """Testes para KnowledgeBaseScraper."""
-
-    def test_scraper_collect_articles_single_page(self):
-        """Verifica coleta de artigos de uma página."""
+    def test_scraper_collect_articles_single_page_with_table(self):
         mock_page = MagicMock()
 
-        # Mock do loading
         mock_loading = MagicMock()
-        mock_loading.count.return_value = 0
-        mock_page.get_by_text.return_value = mock_loading
+        mock_loading.wait_for = MagicMock()
+        mock_page.locator.return_value = mock_loading
 
-        # Mock dos links
-        mock_link = MagicMock()
-        mock_link.get_attribute.return_value = "/article/1"
-        mock_link.locator.return_value.locator.return_value.first.text_content.return_value = "Test Article"
-        mock_page.get_by_role.return_value.all.return_value = [mock_link]
+        mock_page.evaluate.return_value = [
+            {"url": "https://example.com/artigo/1", "title": "Article 1"},
+            {"url": "https://example.com/artigo/2", "title": "Article 2"},
+        ]
 
-        # Mock do botão next desabilitado
+        mock_next_btn = MagicMock()
+        mock_next_btn.count.return_value = 0
+
+        def locator_side_effect(selector):
+            if "›" in selector:
+                return mock_next_btn
+            return mock_loading
+
+        mock_page.locator.side_effect = locator_side_effect
+
+        scraper = KnowledgeBaseScraper(mock_page)
+        articles = scraper.collect_all_article_urls()
+
+        assert len(articles) == 2
+        assert articles[0].title == "Article 1"
+        assert articles[1].url == "https://example.com/artigo/2"
+
+    def test_scraper_collect_articles_with_pagination(self):
+        mock_page = MagicMock()
+
+        mock_loading = MagicMock()
+        mock_loading.wait_for = MagicMock()
+        mock_row = MagicMock()
+        mock_row.wait_for = MagicMock()
+        mock_loading.first = mock_row
+
+        evaluate_results = [
+            [{"url": "https://example.com/artigo/1", "title": "Page 1 Article"}],
+            "https://example.com/artigo/2",
+            [{"url": "https://example.com/artigo/2", "title": "Page 2 Article"}],
+            None,
+        ]
+        mock_page.evaluate.side_effect = evaluate_results
+        mock_page.wait_for_timeout = MagicMock()
+
+        next_btn_count = [0]
+
+        def locator_side_effect(selector):
+            if "›" in selector:
+                next_btn_count[0] += 1
+                mock_next = MagicMock()
+                mock_next.count.return_value = 1 if next_btn_count[0] < 2 else 0
+                mock_next.first = MagicMock()
+                return mock_next
+            if "Carregando" in selector:
+                return mock_loading
+            if "table tbody tr" in selector:
+                return mock_row
+            return mock_loading
+
+        mock_page.locator.side_effect = locator_side_effect
+
+        scraper = KnowledgeBaseScraper(mock_page)
+        articles = scraper.collect_all_article_urls()
+
+        assert len(articles) == 2
+        assert articles[0].title == "Page 1 Article"
+        assert articles[1].title == "Page 2 Article"
+
+    def test_scraper_waits_for_loading_to_disappear(self):
+        mock_page = MagicMock()
+
+        mock_loading = MagicMock()
+        mock_loading.wait_for = MagicMock()
+        mock_row = MagicMock()
+        mock_row.wait_for = MagicMock()
+        mock_loading.first = mock_row
+
+        mock_next = MagicMock()
+        mock_next.count.return_value = 0
+
+        def locator_side_effect(selector):
+            if "›" in selector:
+                return mock_next
+            if "Carregando" in selector:
+                return mock_loading
+            if "table tbody tr" in selector:
+                return mock_row
+            return mock_loading
+
+        mock_page.locator.side_effect = locator_side_effect
+        mock_page.evaluate.return_value = []
+
+        scraper = KnowledgeBaseScraper(mock_page)
+        scraper.collect_all_article_urls()
+
+        mock_loading.wait_for.assert_any_call(state="visible", timeout=2000)
+        mock_loading.wait_for.assert_any_call(state="hidden", timeout=30000)
+
+    def test_scraper_respects_max_pages_limit(self):
+        mock_page = MagicMock()
+
+        mock_loading = MagicMock()
+        mock_loading.wait_for = MagicMock()
+        mock_row = MagicMock()
+        mock_row.wait_for = MagicMock()
+        mock_loading.first = mock_row
+
+        def evaluate_side_effect(js_code):
+            if "querySelectorAll" in js_code:
+                return [{"url": "https://example.com/artigo/1", "title": "Article"}]
+            return "https://example.com/artigo/2"
+
+        mock_page.evaluate.side_effect = evaluate_side_effect
+        mock_page.wait_for_timeout = MagicMock()
+
         mock_next = MagicMock()
         mock_next.count.return_value = 1
-        mock_next.is_enabled.return_value = False
+        mock_next.first = MagicMock()
 
-        def get_by_role_side_effect(role, **kwargs):
-            if kwargs.get("name") == "Visualizar":
-                result = MagicMock()
-                result.all.return_value = [mock_link]
-                return result
-            elif kwargs.get("name") == "»":
+        def locator_side_effect(selector):
+            if "›" in selector:
                 return mock_next
-            return MagicMock()
+            if "Carregando" in selector:
+                return mock_loading
+            if "table tbody tr" in selector:
+                return mock_row
+            return mock_loading
 
-        mock_page.get_by_role.side_effect = get_by_role_side_effect
+        mock_page.locator.side_effect = locator_side_effect
 
         scraper = KnowledgeBaseScraper(mock_page)
-        articles = scraper.collect_all_article_urls()
+        articles = scraper.collect_all_article_urls(max_pages=3)
 
-        assert isinstance(articles, list)
+        assert len(articles) == 3
 
-    def test_scraper_collect_articles_pagination(self):
-        """Verifica coleta de artigos com paginação."""
+    def test_scraper_handles_empty_table(self):
         mock_page = MagicMock()
 
-        # Mock do loading
         mock_loading = MagicMock()
-        mock_loading.count.return_value = 0
-        mock_page.get_by_text.return_value = mock_loading
+        mock_loading.wait_for = MagicMock()
+        mock_row = MagicMock()
+        mock_row.wait_for = MagicMock()
+        mock_loading.first = mock_row
 
-        # Mock dos links
-        mock_link = MagicMock()
-        mock_link.get_attribute.return_value = "/article/1"
-        mock_link.locator.return_value.locator.return_value.first.text_content.return_value = "Article"
+        mock_page.evaluate.return_value = []
 
-        # Contador para simular paginação
-        call_count = [0]
+        mock_next = MagicMock()
+        mock_next.count.return_value = 0
 
-        def get_by_role_side_effect(role, **kwargs):
-            if kwargs.get("name") == "Visualizar":
-                result = MagicMock()
-                result.all.return_value = [mock_link]
-                return result
-            elif kwargs.get("name") == "»":
-                mock_next = MagicMock()
-                mock_next.count.return_value = 1
-                call_count[0] += 1
-                mock_next.is_enabled.return_value = call_count[0] < 2
+        def locator_side_effect(selector):
+            if "›" in selector:
                 return mock_next
-            return MagicMock()
+            if "Carregando" in selector:
+                return mock_loading
+            if "table tbody tr" in selector:
+                return mock_row
+            return mock_loading
 
-        mock_page.get_by_role.side_effect = get_by_role_side_effect
+        mock_page.locator.side_effect = locator_side_effect
 
         scraper = KnowledgeBaseScraper(mock_page)
         articles = scraper.collect_all_article_urls()
 
-        assert isinstance(articles, list)
+        assert articles == []
 
     def test_scraper_is_already_rated_true(self):
         """Verifica detecção de artigo já avaliado."""
