@@ -6,7 +6,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).parents[1]))
 
-from scripts.personal.selection_process import search_text_in_pdf
+from scripts.selection_process import search_text_in_pdf
 
 
 @dataclass
@@ -62,9 +62,12 @@ def test_name_search_in_pdf(test_case: CaseData, downloads_dir: Path) -> None:
     file = test_case.file
     expected_page = test_case.expected_page
     filepath = downloads_dir / file
+
+    if not filepath.exists():
+        pytest.skip(f"Test PDF file not found: {file}")
+
     pages_found = search_text_in_pdf(filepath, name)
 
-    assert filepath.exists(), f"File {file} not found for testing {name}"
     assert expected_page in pages_found, (
         f"Name '{name}' not found on page {expected_page} in file {file}. "
         f"Found on pages: {pages_found}"
