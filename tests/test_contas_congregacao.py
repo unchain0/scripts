@@ -8,7 +8,11 @@ import pytest
 from scripts.contas_congregacao import (
     _fix_chart_aggregation,
     _formatar_brl,
-    _inject_mobile_layout,
+    adicionar_moving_averages,
+    calcular_metricas_avancadas,
+    calcular_tendencia,
+    categorizar_transacao,
+    detectar_anomalias,
     limpar_numero,
     preparar_dados_dashboard,
 )
@@ -108,39 +112,120 @@ class TestFixChartAggregation:
             assert visual_file.read_text() == original_content
 
 
-class TestInjectMobileLayout:
-    def test_injeta_mobile_state_em_page_json(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            page_dir = Path(tmpdir) / "pages" / "page1"
-            page_dir.mkdir(parents=True)
-            visuals_dir = page_dir / "visuals" / "visual1"
-            visuals_dir.mkdir(parents=True)
+class TestCategorizarTransacao:
+    def test_deposito_atm(self):
+        assert categorizar_transacao("Dep Din Atm Agencia 1234") == "Doações/Depósitos"
 
-            page_file = page_dir / "page.json"
-            page_file.write_text(json.dumps({"name": "page1"}))
+    def test_torre_de_vigia(self):
+        assert (
+            categorizar_transacao("Transf.para c/c Associacao Torre de Vigia")
+            == "Remessas Organizacionais"
+        )
 
-            visual_file = visuals_dir / "visual.json"
-            visual_file.write_text(
-                json.dumps({"name": "visual1", "position": {"height": 100}})
-            )
+    def test_pagamento_cobranca(self):
+        assert categorizar_transacao("Pagto Cobranca Celesc") == "Manutenção"
 
-            _inject_mobile_layout(Path(tmpdir))
+    def test_rendimentos(self):
+        assert categorizar_transacao("Rendimentos Poup 01/2024") == "Rendimentos"
 
-            data = json.loads(page_file.read_text())
-            assert "mobileState" in data
-            assert "visualContainers" in data["mobileState"]
-            assert data["mobileState"]["width"] == 320
+    def test_pix(self):
+        assert categorizar_transacao("Transfe Pix Fulano") == "Transferências"
 
-    def test_ignora_pagina_sem_visuals(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            page_dir = Path(tmpdir) / "pages" / "page1"
-            page_dir.mkdir(parents=True)
+    def test_ted(self):
+        assert categorizar_transacao("Ted Recebido") == "Recebimentos Especiais"
 
-            page_file = page_dir / "page.json"
-            original_content = json.dumps({"name": "Empty Page"})
-            page_file.write_text(original_content)
+    def test_outros(self):
+        assert categorizar_transacao("Operação desconhecida") == "Outros"
 
-            _inject_mobile_layout(Path(tmpdir))
 
-            data = json.loads(page_file.read_text())
-            assert "mobileState" not in data
+class TestCalcularMetricasAvancadas:
+    @pytest.fixture
+    def df_metricas(self):
+        return pd.DataFrame(
+            {
+                "Data": pd.to_datetime(
+                    ["2024-01-15", "2024-01-20", "2024-02-15", "2024-02-20"]
+                ),
+                "Credito_Abs": [1000.0, 500.0, 800.0, 200.0],
+                "Debito_Abs": [300.0, 100.0, 400.0, 100.0],
+                "Saldo": [700.0, 1100.0, 1500.0, 1600.0],
+                "Valor": [700.0, 400.0, 400.0, 100.0],
+                "AnoMes": ["2024-01", "2024-01", "2024-02", "2024-02"],
+            }
+        )
+
+    def test_savings_rate_positivo(self, df_metricas):
+        metricas = calcular_metricas_avancadas(df_metricas)
+        assert metricas["savings_rate"] > 0
+
+    def test_burn_rate_calculado(self, df_metricas):
+        metricas = calcular_metricas_avancadas(df_metricas)
+        assert metricas["burn_rate"] > 0
+
+    def test_income_expense_ratio(self, df_metricas):
+        metricas = calcular_metricas_avancadas(df_metricas)
+        total_creditos = df_metricas["Credito_Abs"].sum()
+        total_debitos = df_metricas["Debito_Abs"].sum()
+        expected = total_creditos / total_debitos
+        assert abs(metricas["income_expense_ratio"] - expected) < 0.01
+
+
+class TestCalcularTendencia:
+    def test_tendencia_alta(self):
+        valores = pd.Series([100, 200, 300, 400, 500])
+        assert calcular_tendencia(valores) == "Alta"
+
+    def test_tendencia_baixa(self):
+        valores = pd.Series([500, 400, 300, 200, 100])
+        assert calcular_tendencia(valores) == "Baixa"
+
+    def test_tendencia_estavel(self):
+        valores = pd.Series([100, 100, 100, 100, 100])
+        assert calcular_tendencia(valores) == "Estável"
+
+    def test_poucos_valores(self):
+        valores = pd.Series([100, 200])
+        assert calcular_tendencia(valores) == "Estável"
+
+
+class TestAdicionarMovingAverages:
+    @pytest.fixture
+    def df_mensal(self):
+        return pd.DataFrame(
+            {
+                "Data": pd.to_datetime(
+                    ["2024-01-15", "2024-02-15", "2024-03-15", "2024-04-15"]
+                ),
+                "Saldo": [1000.0, 1200.0, 1400.0, 1600.0],
+                "Valor": [100.0, 200.0, 200.0, 200.0],
+                "AnoMes": ["2024-01", "2024-02", "2024-03", "2024-04"],
+            }
+        )
+
+    def test_adiciona_colunas_ma(self, df_mensal):
+        result = adicionar_moving_averages(df_mensal)
+        assert "MA3_Saldo" in result.columns
+        assert "MA3_Fluxo" in result.columns
+        assert "Tendencia" in result.columns
+
+
+class TestDetectarAnomalias:
+    @pytest.fixture
+    def df_anomalia(self):
+        df = pd.DataFrame(
+            {
+                "Valor": [100.0, 110.0, 105.0, 95.0, 100.0, 5000.0],
+                "Categoria": ["A", "A", "A", "A", "A", "A"],
+            }
+        )
+        return df
+
+    def test_detecta_valor_anomalo(self, df_anomalia):
+        result = detectar_anomalias(df_anomalia, threshold=2.0)
+        assert "Anomalia" in result.columns
+        assert result[result["Valor"] == 5000.0]["Anomalia"].iloc[0] == "Anomalia"
+
+    def test_valores_normais(self, df_anomalia):
+        result = detectar_anomalias(df_anomalia)
+        normais = result[result["Valor"] < 200]["Anomalia"]
+        assert all(n == "Normal" for n in normais)

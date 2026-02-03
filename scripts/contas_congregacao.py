@@ -40,6 +40,19 @@ DECIMAL_CSV = ","
 MAX_WORKERS = 4
 
 # =============================================================================
+# CONSTANTES - CATEGORIZAÇÃO DE TRANSAÇÕES
+# =============================================================================
+CATEGORIAS_TRANSACOES = {
+    "Doações/Depósitos": ["Dep Din Atm", "Deposito", "Dep Cheque"],
+    "Remessas Organizacionais": ["Torre de Vigia", "Associacao Torre"],
+    "Manutenção": ["Pagto Cobranca", "Manutencao", "Condominio", "Luz", "Agua"],
+    "Rendimentos": ["Rendimentos Poup", "Rendimento", "Juros"],
+    "Transferências": ["Transfe Pix", "Tr.aut.c/c", "Pix Enviado", "Pix Recebido"],
+    "Recebimentos Especiais": ["Ted", "Receb Pagfor", "Doc"],
+}
+CATEGORIA_PADRAO = "Outros"
+
+# =============================================================================
 # CONSTANTES - DASHBOARD
 # =============================================================================
 CORES = {
@@ -334,6 +347,137 @@ def processar_extratos() -> pd.DataFrame | None:
 # =============================================================================
 # FUNÇÕES - DASHBOARD
 # =============================================================================
+def categorizar_transacao(historico: str) -> str:
+    """Categoriza uma transação baseado no campo Historico."""
+    historico_upper = str(historico).upper()
+    for categoria, palavras_chave in CATEGORIAS_TRANSACOES.items():
+        for palavra in palavras_chave:
+            if palavra.upper() in historico_upper:
+                return categoria
+    return CATEGORIA_PADRAO
+
+
+def calcular_tendencia(valores: pd.Series) -> str:
+    """Calcula tendência via regressão linear: 'Alta', 'Baixa' ou 'Estável'."""
+    if len(valores) < 3:
+        return "Estável"
+
+    x = np.arange(len(valores))
+    y = np.array(valores.values, dtype=float)
+
+    slope, _ = np.polyfit(x, y, 1)
+
+    std_y = float(np.std(y))
+    threshold = std_y * 0.1 if std_y > 0 else 0.01
+
+    if slope > threshold:
+        return "Alta"
+    elif slope < -threshold:
+        return "Baixa"
+    return "Estável"
+
+
+def adicionar_moving_averages(df: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona médias móveis de 3 meses ao DataFrame."""
+    df = df.copy()
+
+    mensal = df.groupby("AnoMes").agg({"Saldo": "last", "Valor": "sum"}).reset_index()
+    mensal["MA3_Saldo"] = mensal["Saldo"].rolling(window=3, min_periods=1).mean()
+    mensal["MA3_Fluxo"] = mensal["Valor"].rolling(window=3, min_periods=1).mean()
+
+    mensal["Tendencia"] = calcular_tendencia(mensal["Saldo"])
+
+    ma_map = mensal.set_index("AnoMes")[
+        ["MA3_Saldo", "MA3_Fluxo", "Tendencia"]
+    ].to_dict()
+    df["MA3_Saldo"] = df["AnoMes"].map(ma_map["MA3_Saldo"]).round(2)
+    df["MA3_Fluxo"] = df["AnoMes"].map(ma_map["MA3_Fluxo"]).round(2)
+    df["Tendencia"] = df["AnoMes"].map(ma_map["Tendencia"])
+
+    return df
+
+
+def detectar_anomalias(df: pd.DataFrame, threshold: float = 2.0) -> pd.DataFrame:
+    """Detecta transações anômalas usando Z-Score por categoria."""
+    df = df.copy()
+    df["Anomalia"] = "Normal"
+
+    for categoria in df["Categoria"].unique():
+        cat_mask = df["Categoria"] == categoria
+        cat_indices = df[cat_mask].index.tolist()
+
+        if len(cat_indices) < 3:
+            continue
+
+        valores = df.loc[cat_indices, "Valor"].abs().astype(float)
+        mean_val = valores.mean()
+        std_val = valores.std()
+
+        if std_val == 0:
+            continue
+
+        for idx in cat_indices:
+            z_score = abs((abs(df.loc[idx, "Valor"]) - mean_val) / std_val)
+            if z_score > threshold:
+                df.loc[idx, "Anomalia"] = "Anomalia"
+
+    return df
+
+
+def calcular_metricas_avancadas(df: pd.DataFrame) -> dict[str, float]:
+    """
+    Calcula métricas financeiras avançadas.
+
+    Retorna:
+        savings_rate: Taxa de poupança (%)
+        burn_rate: Taxa média mensal de gastos
+        runway_meses: Meses de runway com saldo atual
+        dias_caixa: Dias de caixa disponíveis
+        income_expense_ratio: Razão receitas/despesas
+        volatilidade: Volatilidade do fluxo mensal (%)
+    """
+    total_creditos = df["Credito_Abs"].sum()
+    total_debitos = df["Debito_Abs"].sum()
+    saldo_atual = df["Saldo"].iloc[-1] if not df.empty else 0.0
+
+    savings_rate = 0.0
+    if total_creditos > 0:
+        savings_rate = ((total_creditos - total_debitos) / total_creditos) * 100
+
+    fluxo_mensal = df.groupby("AnoMes")["Debito_Abs"].sum()
+    burn_rate = fluxo_mensal.mean() if len(fluxo_mensal) > 0 else 0.0
+
+    runway_meses = 999.0
+    if burn_rate > 0:
+        runway_meses = min(saldo_atual / burn_rate, 999.0)
+
+    num_dias = (df["Data"].max() - df["Data"].min()).days + 1 if len(df) > 1 else 1
+    dias_caixa = 999.0
+    taxa_diaria = total_debitos / num_dias if num_dias > 0 else 0.0
+    if taxa_diaria > 0:
+        dias_caixa = min(saldo_atual / taxa_diaria, 999.0)
+
+    income_expense_ratio = 0.0
+    if total_debitos > 0:
+        income_expense_ratio = total_creditos / total_debitos
+
+    fluxo_liquido_mensal = df.groupby("AnoMes")["Valor"].sum()
+    volatilidade = 0.0
+    if len(fluxo_liquido_mensal) > 1 and fluxo_liquido_mensal.mean() != 0:
+        volatilidade = (
+            fluxo_liquido_mensal.std() / abs(fluxo_liquido_mensal.mean())
+        ) * 100
+
+    return {
+        "savings_rate": round(savings_rate, 1),
+        "burn_rate": round(burn_rate, 2),
+        "runway_meses": round(runway_meses, 1),
+        "dias_caixa": round(dias_caixa, 0),
+        "income_expense_ratio": round(income_expense_ratio, 2),
+        "volatilidade": round(volatilidade, 1),
+    }
+
+
 def preparar_dados_dashboard(df: pd.DataFrame) -> pd.DataFrame:
     """
     Adiciona colunas calculadas necessárias para o dashboard.
@@ -353,6 +497,10 @@ def preparar_dados_dashboard(df: pd.DataFrame) -> pd.DataFrame:
     df["Tipo"] = df["Valor"].apply(lambda x: "Crédito" if x >= 0 else "Débito")
     df["Credito_Abs"] = df["Credito"].abs()
     df["Debito_Abs"] = df["Debito"].abs()
+    df["Categoria"] = df["Historico"].apply(categorizar_transacao)
+
+    df = adicionar_moving_averages(df)
+    df = detectar_anomalias(df)
 
     return df
 
@@ -610,6 +758,184 @@ def criar_pagina_analise_mensal(dashboard: Any, data_source: str) -> None:
     logger.info("Page 'Análise Mensal' created: 3 slicers, 1 chart, 1 table")
 
 
+def criar_pagina_categoria(dashboard: Any, data_source: str, df: pd.DataFrame) -> None:
+    """Cria a página de Análise por Categoria."""
+    page = dashboard.new_page(page_name="Por Categoria")
+
+    chart_height = 300
+    chart_width = (CANVAS_WIDTH - 60) // 2
+
+    debitos_por_cat = (
+        df[df["Tipo"] == "Débito"].groupby("Categoria")["Debito_Abs"].sum()
+    )
+    creditos_por_cat = (
+        df[df["Tipo"] == "Crédito"].groupby("Categoria")["Credito_Abs"].sum()
+    )
+
+    cat_resumo_text = "Resumo por Categoria\n\n"
+    cat_resumo_text += "DESPESAS:\n"
+    for cat, val in debitos_por_cat.sort_values(ascending=False).head(5).items():
+        cat_resumo_text += f"  {cat}: {_formatar_brl(val)}\n"
+    cat_resumo_text += "\nRECEITAS:\n"
+    for cat, val in creditos_por_cat.sort_values(ascending=False).head(5).items():
+        cat_resumo_text += f"  {cat}: {_formatar_brl(val)}\n"
+
+    page.add_text_box(
+        visual_id="kpi_categoria_resumo",
+        text=cat_resumo_text,
+        x_position=20,
+        y_position=20,
+        height=200,
+        width=400,
+        font_size=14,
+        font_color=CORES["dark"],
+        background_color=CORES["background"],
+    )
+
+    page.add_chart(
+        visual_id="chart_despesas_categoria",
+        chart_type="donutChart",
+        data_source=data_source,
+        chart_title="Despesas por Categoria",
+        x_axis_title="Categoria",
+        y_axis_title="Valor (R$)",
+        x_axis_var="Categoria",
+        y_axis_var="Debito_Abs",
+        y_axis_var_aggregation_type="Sum",
+        x_position=20,
+        y_position=240,
+        height=chart_height,
+        width=chart_width,
+        background_color=CORES["white"],
+    )
+
+    page.add_chart(
+        visual_id="chart_receitas_categoria",
+        chart_type="donutChart",
+        data_source=data_source,
+        chart_title="Receitas por Categoria",
+        x_axis_title="Categoria",
+        y_axis_title="Valor (R$)",
+        x_axis_var="Categoria",
+        y_axis_var="Credito_Abs",
+        y_axis_var_aggregation_type="Sum",
+        x_position=40 + chart_width,
+        y_position=240,
+        height=chart_height,
+        width=chart_width,
+        background_color=CORES["white"],
+    )
+
+    page.add_table(
+        visual_id="table_categoria_detalhe",
+        data_source=data_source,
+        variables=["Categoria", "Credito_Abs", "Debito_Abs"],
+        table_title="Detalhamento por Categoria",
+        x_position=440,
+        y_position=20,
+        height=200,
+        width=CANVAS_WIDTH - 460,
+        add_totals_row=True,
+        background_color=CORES["white"],
+    )
+
+    logger.info("Page 'Por Categoria' created: 1 KPI, 2 donut charts, 1 table")
+
+
+def criar_pagina_tendencias(dashboard: Any, data_source: str, df: pd.DataFrame) -> None:
+    """Cria a página de Tendências e Métricas Avançadas."""
+    page = dashboard.new_page(page_name="Tendências")
+
+    metricas = calcular_metricas_avancadas(df)
+
+    tendencia = df["Tendencia"].iloc[-1] if "Tendencia" in df.columns else "N/A"
+    tendencia_emoji = (
+        "↗" if tendencia == "Alta" else ("↘" if tendencia == "Baixa" else "→")
+    )
+
+    kpi_text = (
+        f"Tendência Geral: {tendencia} {tendencia_emoji}\n\n"
+        f"Taxa de Poupança: {metricas['savings_rate']:.1f}%\n"
+        f"Burn Rate Mensal: {_formatar_brl(metricas['burn_rate'])}\n"
+        f"Runway: {metricas['runway_meses']:.0f} meses\n"
+        f"Dias de Caixa: {metricas['dias_caixa']:.0f}\n"
+        f"Receita/Despesa: {metricas['income_expense_ratio']:.2f}x\n"
+        f"Volatilidade: {metricas['volatilidade']:.1f}%"
+    )
+
+    page.add_text_box(
+        visual_id="kpi_metricas_avancadas",
+        text=kpi_text,
+        x_position=20,
+        y_position=20,
+        height=200,
+        width=350,
+        font_size=16,
+        font_color=CORES["primary"],
+        background_color=CORES["background"],
+    )
+
+    page.add_chart(
+        visual_id="chart_saldo_ma",
+        chart_type="lineChart",
+        data_source=data_source,
+        chart_title="Saldo com Média Móvel (3 meses)",
+        x_axis_title="Mês",
+        y_axis_title="Saldo (R$)",
+        x_axis_var="AnoMes",
+        y_axis_var="MA3_Saldo",
+        y_axis_var_aggregation_type="Average",
+        x_position=390,
+        y_position=20,
+        height=200,
+        width=CANVAS_WIDTH - 410,
+        background_color=CORES["white"],
+    )
+
+    page.add_chart(
+        visual_id="chart_fluxo_ma",
+        chart_type="columnChart",
+        data_source=data_source,
+        chart_title="Fluxo Líquido com Média Móvel (3 meses)",
+        x_axis_title="Mês",
+        y_axis_title="Valor (R$)",
+        x_axis_var="AnoMes",
+        y_axis_var="MA3_Fluxo",
+        y_axis_var_aggregation_type="Average",
+        x_position=20,
+        y_position=240,
+        height=280,
+        width=(CANVAS_WIDTH - 60) // 2,
+        background_color=CORES["white"],
+    )
+
+    mensal = df.groupby("AnoMes").agg({"Valor": "sum"}).reset_index()
+    mensal["MoM_Growth"] = mensal["Valor"].pct_change() * 100
+
+    mom_text = "Crescimento MoM (últimos 6 meses):\n\n"
+    for _, row in mensal.tail(6).iterrows():
+        growth = row["MoM_Growth"]
+        if pd.notna(growth):
+            sinal = "+" if growth >= 0 else ""
+            mom_text += f"{row['AnoMes']}: {sinal}{growth:.1f}%\n"
+        else:
+            mom_text += f"{row['AnoMes']}: N/A\n"
+
+    page.add_text_box(
+        visual_id="kpi_mom_growth",
+        text=mom_text,
+        x_position=40 + (CANVAS_WIDTH - 60) // 2,
+        y_position=240,
+        height=280,
+        width=(CANVAS_WIDTH - 60) // 2,
+        font_size=14,
+        font_color=CORES["dark"],
+        background_color=CORES["background"],
+    )
+
+    logger.info("Page 'Tendências' created: 2 KPIs, 2 charts")
+
+
 def criar_pagina_detalhamento(dashboard: Any, data_source: str) -> None:
     """
     Cria a página de Detalhamento com todas as transações.
@@ -660,12 +986,12 @@ def criar_pagina_detalhamento(dashboard: Any, data_source: str) -> None:
         variables=[
             "Data",
             "Historico",
-            "Documento",
+            "Categoria",
             "Credito",
             "Debito",
             "Saldo",
             "Tipo",
-            "AnoMes",
+            "Anomalia",
         ],
         table_title="Todas as Transações",
         x_position=20,
@@ -715,6 +1041,8 @@ def gerar_dashboard(df: pd.DataFrame) -> None:
 
     # Criar páginas
     criar_pagina_visao_geral(dashboard, data_source, df_dashboard)
+    criar_pagina_categoria(dashboard, data_source, df_dashboard)
+    criar_pagina_tendencias(dashboard, data_source, df_dashboard)
     criar_pagina_analise_mensal(dashboard, data_source)
     criar_pagina_detalhamento(dashboard, data_source)
 
