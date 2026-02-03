@@ -7,6 +7,9 @@ import pytest
 
 from scripts.contas_congregacao import (
     _fix_chart_aggregation,
+    _fix_csv_encoding,
+    _fix_theme_colors,
+    _fix_visual_descriptions,
     _formatar_brl,
     adicionar_moving_averages,
     calcular_metricas_avancadas,
@@ -15,6 +18,7 @@ from scripts.contas_congregacao import (
     detectar_anomalias,
     limpar_numero,
     preparar_dados_dashboard,
+    DESCRICOES_VISUAIS,
 )
 
 
@@ -110,6 +114,42 @@ class TestFixChartAggregation:
             _fix_chart_aggregation(Path(tmpdir))
 
             assert visual_file.read_text() == original_content
+
+
+class TestFixCsvEncoding:
+    def test_corrige_encoding_1252_para_65001(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            dashboard_path.mkdir()
+            tables_dir = (
+                dashboard_path / "Dashboard.SemanticModel" / "definition" / "tables"
+            )
+            tables_dir.mkdir(parents=True)
+            tmdl_file = tables_dir / "Data.tmdl"
+            original = 'Source = Csv.Document(File.Contents("\\path\\to\\file.csv"),[Encoding=1252])'
+            tmdl_file.write_text(original, encoding="utf-8")
+
+            _fix_csv_encoding(dashboard_path)
+
+            content = tmdl_file.read_text(encoding="utf-8")
+            assert "Encoding=65001" in content
+            assert "/path/to/file.csv" in content
+
+    def test_nao_altera_se_ja_correto(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            dashboard_path.mkdir()
+            tables_dir = (
+                dashboard_path / "Dashboard.SemanticModel" / "definition" / "tables"
+            )
+            tables_dir.mkdir(parents=True)
+            tmdl_file = tables_dir / "Data.tmdl"
+            original = 'Source = Csv.Document(File.Contents("/path/to/file.csv"),[Encoding=65001])'
+            tmdl_file.write_text(original, encoding="utf-8")
+
+            _fix_csv_encoding(dashboard_path)
+
+            assert tmdl_file.read_text(encoding="utf-8") == original
 
 
 class TestCategorizarTransacao:
@@ -229,3 +269,101 @@ class TestDetectarAnomalias:
         result = detectar_anomalias(df_anomalia)
         normais = result[result["Valor"] < 200]["Anomalia"]
         assert all(n == "Normal" for n in normais)
+
+
+class TestFixVisualDescriptions:
+    def test_adiciona_subtitle_em_visual_conhecido(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            visual_dir = (
+                dashboard_path
+                / "Dashboard.Report"
+                / "definition"
+                / "pages"
+                / "page1"
+                / "visuals"
+                / "kpi_saldo"
+            )
+            visual_dir.mkdir(parents=True)
+            visual_file = visual_dir / "visual.json"
+            original = {
+                "name": "kpi_saldo",
+                "visual": {"visualContainerObjects": {"title": []}},
+            }
+            visual_file.write_text(json.dumps(original), encoding="utf-8")
+
+            _fix_visual_descriptions(dashboard_path)
+
+            content = json.loads(visual_file.read_text(encoding="utf-8"))
+            assert "subTitle" in content["visual"]["visualContainerObjects"]
+            subtitle = content["visual"]["visualContainerObjects"]["subTitle"]
+            assert (
+                subtitle[0]["properties"]["show"]["expr"]["Literal"]["Value"] == "true"
+            )
+            assert (
+                DESCRICOES_VISUAIS["kpi_saldo"]
+                in subtitle[0]["properties"]["text"]["expr"]["Literal"]["Value"]
+            )
+
+    def test_ignora_visual_desconhecido(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            visual_dir = (
+                dashboard_path
+                / "Dashboard.Report"
+                / "definition"
+                / "pages"
+                / "page1"
+                / "visuals"
+                / "visual_desconhecido"
+            )
+            visual_dir.mkdir(parents=True)
+            visual_file = visual_dir / "visual.json"
+            original = {
+                "name": "visual_desconhecido",
+                "visual": {"visualContainerObjects": {}},
+            }
+            visual_file.write_text(json.dumps(original), encoding="utf-8")
+
+            _fix_visual_descriptions(dashboard_path)
+
+            content = json.loads(visual_file.read_text(encoding="utf-8"))
+            assert "subTitle" not in content["visual"]["visualContainerObjects"]
+
+
+class TestFixThemeColors:
+    def test_atualiza_cores_do_tema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            theme_dir = (
+                dashboard_path
+                / "Dashboard.Report"
+                / "StaticResources"
+                / "SharedResources"
+                / "BaseThemes"
+            )
+            theme_dir.mkdir(parents=True)
+            theme_file = theme_dir / "CY24SU10.json"
+            original = {
+                "name": "theme",
+                "dataColors": ["#FF0000", "#00FF00"],
+                "tableAccent": "#000000",
+                "foreground": "#000000",
+                "background": "#000000",
+            }
+            theme_file.write_text(json.dumps(original), encoding="utf-8")
+
+            _fix_theme_colors(dashboard_path)
+
+            content = json.loads(theme_file.read_text(encoding="utf-8"))
+            assert content["dataColors"][0] == "#005A9E"
+            assert content["tableAccent"] == "#005A9E"
+            assert content["foreground"] == "#2D3436"
+            assert content["background"] == "#FFFFFF"
+
+    def test_nao_falha_se_tema_nao_existe(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = Path(tmpdir) / "Dashboard"
+            dashboard_path.mkdir()
+
+            _fix_theme_colors(dashboard_path)

@@ -56,13 +56,35 @@ CATEGORIA_PADRAO = "Outros"
 # CONSTANTES - DASHBOARD
 # =============================================================================
 CORES = {
-    "primary": "#0078D4",
-    "success": "#107C10",
-    "danger": "#D13438",
-    "warning": "#FFB900",
-    "background": "#F3F2F1",
+    "primary": "#005A9E",
+    "primary_light": "#0078D4",
+    "accent": "#50E6FF",
+    "background": "#FFFFFF",
+    "background_alt": "#F8F9FA",
     "white": "#FFFFFF",
-    "dark": "#323130",
+    "dark": "#2D3436",
+    "text_muted": "#636E72",
+}
+
+DESCRICOES_VISUAIS: dict[str, str] = {
+    "kpi_saldo": "Valor disponivel em caixa no momento",
+    "kpi_creditos": "Soma de todas as entradas (doacoes, depositos, rendimentos)",
+    "kpi_debitos": "Soma de todas as saidas (remessas, manutencao, despesas)",
+    "kpi_transacoes": "Quantidade total de movimentacoes no periodo",
+    "chart_evolucao_saldo": "Acompanhe como o saldo variou ao longo dos meses",
+    "chart_credito_debito": "Compare entradas e saidas mensalmente",
+    "table_transacoes_recentes": "Lista das ultimas movimentacoes registradas",
+    "kpi_categoria_resumo": "Resumo das maiores fontes de receita e despesa",
+    "chart_despesas_categoria": "Distribuicao percentual das saidas por tipo",
+    "chart_receitas_categoria": "Distribuicao percentual das entradas por tipo",
+    "table_categoria_detalhe": "Valores detalhados por categoria",
+    "kpi_metricas_avancadas": "Indicadores financeiros para analise de saude fiscal",
+    "chart_saldo_ma": "Tendencia do saldo com suavizacao de 3 meses",
+    "chart_fluxo_ma": "Fluxo liquido (entradas - saidas) suavizado",
+    "kpi_mom_growth": "Variacao percentual mes a mes",
+    "chart_fluxo_mensal": "Saldo liquido de cada mes (positivo = sobrou, negativo = faltou)",
+    "table_resumo_mensal": "Resumo consolidado por periodo",
+    "table_todas_transacoes": "Listagem completa de todas as transacoes",
 }
 CANVAS_WIDTH = 1280
 CANVAS_HEIGHT = 720
@@ -534,6 +556,146 @@ def _fix_chart_aggregation(dashboard_path: Path) -> None:
                 logger.warning(f"Failed to fix aggregation in {visual_file}: {e}")
 
 
+def _fix_csv_encoding(dashboard_path: Path) -> None:
+    """
+    Corrige encoding (1252 -> 65001/UTF-8) e paths (backslash -> forward slash)
+    nos arquivos .tmdl gerados pela powerbpy.
+    """
+    import re
+
+    semantic_model_path = dashboard_path / f"{dashboard_path.name}.SemanticModel"
+    tables_path = semantic_model_path / "definition" / "tables"
+
+    if not tables_path.exists():
+        logger.warning(f"Tables path not found: {tables_path}")
+        return
+
+    def fix_path(match: re.Match[str]) -> str:
+        return f'File.Contents("{match.group(1).replace(chr(92), "/")}")'
+
+    for tmdl_file in tables_path.glob("*.tmdl"):
+        try:
+            content = tmdl_file.read_text(encoding="utf-8")
+            original_content = content
+
+            content = content.replace("Encoding=1252", "Encoding=65001")
+            content = re.sub(r'File\.Contents\("([^"]+)"\)', fix_path, content)
+
+            if content != original_content:
+                tmdl_file.write_text(content, encoding="utf-8")
+                logger.info(f"Fixed CSV encoding and path in {tmdl_file.name}")
+        except OSError as e:
+            logger.warning(f"Failed to fix encoding in {tmdl_file}: {e}")
+
+
+def _fix_visual_descriptions(dashboard_path: Path) -> None:
+    """
+    Adiciona subtítulos descritivos aos visuais do dashboard.
+
+    Usa o dicionário DESCRICOES_VISUAIS para injetar descrições amigáveis
+    em cada visual, ajudando usuários leigos a entender o propósito de cada
+    gráfico ou KPI.
+    """
+    import json
+
+    report_path = dashboard_path / f"{dashboard_path.name}.Report"
+    pages_path = report_path / "definition" / "pages"
+
+    if not pages_path.exists():
+        logger.warning(f"Pages path not found: {pages_path}")
+        return
+
+    visuals_updated = 0
+
+    for visual_dir in pages_path.rglob("visuals/*"):
+        if not visual_dir.is_dir():
+            continue
+
+        visual_id = visual_dir.name
+        if visual_id not in DESCRICOES_VISUAIS:
+            continue
+
+        visual_file = visual_dir / "visual.json"
+        if not visual_file.exists():
+            continue
+
+        try:
+            content = json.loads(visual_file.read_text(encoding="utf-8"))
+
+            visual_container_objects = content.get("visual", {}).get(
+                "visualContainerObjects", {}
+            )
+
+            description = DESCRICOES_VISUAIS[visual_id]
+            subtitle_obj = [
+                {
+                    "properties": {
+                        "show": {"expr": {"Literal": {"Value": "true"}}},
+                        "text": {"expr": {"Literal": {"Value": f"'{description}'"}}},
+                    }
+                }
+            ]
+
+            visual_container_objects["subTitle"] = subtitle_obj
+
+            visual_file.write_text(
+                json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            visuals_updated += 1
+
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to add subtitle to {visual_id}: {e}")
+
+    if visuals_updated > 0:
+        logger.info(f"Added descriptions to {visuals_updated} visuals")
+
+
+def _fix_theme_colors(dashboard_path: Path) -> None:
+    """
+    Atualiza as cores do tema do dashboard para a paleta azul minimalista.
+
+    Modifica o arquivo de tema base para usar cores consistentes com o
+    design branco + azul do dashboard.
+    """
+    import json
+
+    theme_path = (
+        dashboard_path
+        / f"{dashboard_path.name}.Report"
+        / "StaticResources"
+        / "SharedResources"
+        / "BaseThemes"
+        / "CY24SU10.json"
+    )
+
+    if not theme_path.exists():
+        logger.warning(f"Theme file not found: {theme_path}")
+        return
+
+    try:
+        content = json.loads(theme_path.read_text(encoding="utf-8"))
+
+        content["dataColors"] = [
+            "#005A9E",
+            "#0078D4",
+            "#50E6FF",
+            "#B3D9E6",
+            "#E8F4F8",
+        ]
+
+        content["tableAccent"] = "#005A9E"
+        content["foreground"] = "#2D3436"
+        content["background"] = "#FFFFFF"
+
+        theme_path.write_text(
+            json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("Updated theme colors to blue palette")
+
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to update theme colors: {e}")
+
+
 def _formatar_brl(valor: float) -> str:
     """Formata valor monetário no padrão brasileiro (R$ 1.234,56)."""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -569,7 +731,7 @@ def criar_pagina_visao_geral(
         width=CARD_WIDTH,
         font_size=24,
         font_color=CORES["primary"],
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     page.add_text_box(
@@ -580,8 +742,8 @@ def criar_pagina_visao_geral(
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
         font_size=24,
-        font_color=CORES["success"],
-        background_color=CORES["background"],
+        font_color=CORES["primary_light"],
+        background_color=CORES["background_alt"],
     )
 
     page.add_text_box(
@@ -592,8 +754,8 @@ def criar_pagina_visao_geral(
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
         font_size=24,
-        font_color=CORES["danger"],
-        background_color=CORES["background"],
+        font_color=CORES["dark"],
+        background_color=CORES["background_alt"],
     )
 
     page.add_text_box(
@@ -605,7 +767,7 @@ def criar_pagina_visao_geral(
         width=CARD_WIDTH,
         font_size=24,
         font_color=CORES["dark"],
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     charts_y = cards_y + CARD_HEIGHT + 30
@@ -690,7 +852,7 @@ def criar_pagina_analise_mensal(dashboard: Any, data_source: str) -> None:
         y_position=slicer_y,
         height=slicer_height,
         width=slicer_width,
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     # Slicer: Mês
@@ -703,7 +865,7 @@ def criar_pagina_analise_mensal(dashboard: Any, data_source: str) -> None:
         y_position=slicer_y,
         height=slicer_height,
         width=slicer_width,
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     # Slicer: Tipo
@@ -716,7 +878,7 @@ def criar_pagina_analise_mensal(dashboard: Any, data_source: str) -> None:
         y_position=slicer_y,
         height=slicer_height,
         width=slicer_width,
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     content_y = slicer_y + slicer_height + 30
@@ -789,7 +951,7 @@ def criar_pagina_categoria(dashboard: Any, data_source: str, df: pd.DataFrame) -
         width=400,
         font_size=14,
         font_color=CORES["dark"],
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     page.add_chart(
@@ -872,7 +1034,7 @@ def criar_pagina_tendencias(dashboard: Any, data_source: str, df: pd.DataFrame) 
         width=350,
         font_size=16,
         font_color=CORES["primary"],
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     page.add_chart(
@@ -930,7 +1092,7 @@ def criar_pagina_tendencias(dashboard: Any, data_source: str, df: pd.DataFrame) 
         width=(CANVAS_WIDTH - 60) // 2,
         font_size=14,
         font_color=CORES["dark"],
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     logger.info("Page 'Tendências' created: 2 KPIs, 2 charts")
@@ -960,7 +1122,7 @@ def criar_pagina_detalhamento(dashboard: Any, data_source: str) -> None:
         y_position=slicer_y,
         height=slicer_height,
         width=slicer_width,
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     # Slicer: Tipo
@@ -973,7 +1135,7 @@ def criar_pagina_detalhamento(dashboard: Any, data_source: str) -> None:
         y_position=slicer_y,
         height=slicer_height,
         width=slicer_width,
-        background_color=CORES["background"],
+        background_color=CORES["background_alt"],
     )
 
     table_y = slicer_y + slicer_height + 20
@@ -1047,6 +1209,9 @@ def gerar_dashboard(df: pd.DataFrame) -> None:
     criar_pagina_detalhamento(dashboard, data_source)
 
     _fix_chart_aggregation(DASHBOARD_PATH)
+    _fix_csv_encoding(DASHBOARD_PATH)
+    _fix_visual_descriptions(DASHBOARD_PATH)
+    _fix_theme_colors(DASHBOARD_PATH)
 
     logger.info("=" * 60)
     logger.info("Dashboard created successfully!")
