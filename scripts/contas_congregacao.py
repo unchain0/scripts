@@ -357,75 +357,172 @@ def preparar_dados_dashboard(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def criar_pagina_visao_geral(dashboard: Any, data_source: str) -> None:
+def _fix_chart_aggregation(dashboard_path: Path) -> None:
+    """
+    Corrige a agregação de gráficos no JSON do Power BI.
+
+    A biblioteca powerbpy usa Function: 0 (Sum) por padrão, mas para gráficos
+    como 'Evolução do Saldo', precisamos de Function: 1 (Average).
+    """
+    for visual_dir in dashboard_path.rglob("visuals"):
+        for chart_dir in visual_dir.iterdir():
+            if not chart_dir.is_dir():
+                continue
+
+            if "evolucao_saldo" not in chart_dir.name:
+                continue
+
+            visual_file = chart_dir / "visual.json"
+            if not visual_file.exists():
+                continue
+
+            try:
+                content = visual_file.read_text(encoding="utf-8")
+                content_modified = content.replace('"Function": 0', '"Function": 1')
+                if content_modified != content:
+                    visual_file.write_text(content_modified, encoding="utf-8")
+                    logger.info(f"Fixed aggregation to Average in {chart_dir.name}")
+            except OSError as e:
+                logger.warning(f"Failed to fix aggregation in {visual_file}: {e}")
+
+
+def _inject_mobile_layout(dashboard_path: Path) -> None:
+    """
+    Injeta layout móvel nos arquivos page.json do dashboard Power BI.
+
+    Empilha visuais verticalmente para visualização em dispositivos móveis.
+    A estrutura PBIP armazena visuais em subpastas separadas.
+    """
+    import json
+
+    mobile_width = 320
+
+    for page_dir in dashboard_path.rglob("pages"):
+        for page_subdir in page_dir.iterdir():
+            if not page_subdir.is_dir() or page_subdir.name == "pages.json":
+                continue
+
+            page_file = page_subdir / "page.json"
+            visuals_dir = page_subdir / "visuals"
+
+            if not page_file.exists() or not visuals_dir.exists():
+                continue
+
+            try:
+                page_data = json.loads(page_file.read_text(encoding="utf-8"))
+
+                mobile_y_offset = 0
+                visual_spacing = 10
+                mobile_visuals = []
+
+                for visual_dir in sorted(visuals_dir.iterdir()):
+                    visual_file = visual_dir / "visual.json"
+                    if not visual_file.exists():
+                        continue
+
+                    visual_data = json.loads(visual_file.read_text(encoding="utf-8"))
+                    original_height = visual_data.get("position", {}).get("height", 200)
+                    visual_name = visual_data.get("name", visual_dir.name)
+
+                    mobile_visuals.append(
+                        {
+                            "name": visual_name,
+                            "position": {
+                                "x": 0,
+                                "y": mobile_y_offset,
+                                "width": mobile_width,
+                                "height": min(original_height, 200),
+                            },
+                        }
+                    )
+                    mobile_y_offset += min(original_height, 200) + visual_spacing
+
+                if mobile_visuals:
+                    page_data["mobileState"] = {
+                        "visualContainers": mobile_visuals,
+                        "width": mobile_width,
+                        "height": mobile_y_offset,
+                    }
+                    page_file.write_text(
+                        json.dumps(page_data, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    logger.info(f"Injected mobile layout in {page_subdir.name}")
+
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f"Failed to inject mobile layout in {page_file}: {e}")
+
+
+def _formatar_brl(valor: float) -> str:
+    """Formata valor monetário no padrão brasileiro (R$ 1.234,56)."""
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def criar_pagina_visao_geral(
+    dashboard: Any, data_source: str, df: pd.DataFrame
+) -> None:
     """
     Cria a página de Visão Geral com KPIs e gráficos principais.
 
     Args:
         dashboard: Instância do Dashboard powerbpy.
         data_source: Nome do dataset no dashboard.
+        df: DataFrame com os dados para calcular KPIs.
     """
     page = dashboard.new_page(page_name="Visão Geral")
 
     cards_y = 20
     card_spacing = 20
 
-    # Card 1: Saldo Atual
-    page.add_card(
-        visual_id="card_saldo",
-        data_source=data_source,
-        measure_name="Saldo",
-        card_title="Saldo Atual",
+    saldo_atual = df["Saldo"].iloc[-1] if not df.empty else 0.0
+    total_creditos = df["Credito_Abs"].sum() if "Credito_Abs" in df.columns else 0.0
+    total_debitos = df["Debito_Abs"].sum() if "Debito_Abs" in df.columns else 0.0
+    num_transacoes = len(df)
+
+    page.add_text_box(
+        visual_id="kpi_saldo",
+        text=f"Saldo Atual\n{_formatar_brl(saldo_atual)}",
         x_position=20,
         y_position=cards_y,
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
-        font_size=32,
+        font_size=24,
         font_color=CORES["primary"],
         background_color=CORES["background"],
     )
 
-    # Card 2: Total Créditos
-    page.add_card(
-        visual_id="card_creditos",
-        data_source=data_source,
-        measure_name="Credito_Abs",
-        card_title="Total Créditos",
+    page.add_text_box(
+        visual_id="kpi_creditos",
+        text=f"Total Créditos\n{_formatar_brl(total_creditos)}",
         x_position=20 + CARD_WIDTH + card_spacing,
         y_position=cards_y,
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
-        font_size=32,
+        font_size=24,
         font_color=CORES["success"],
         background_color=CORES["background"],
     )
 
-    # Card 3: Total Débitos
-    page.add_card(
-        visual_id="card_debitos",
-        data_source=data_source,
-        measure_name="Debito_Abs",
-        card_title="Total Débitos",
+    page.add_text_box(
+        visual_id="kpi_debitos",
+        text=f"Total Débitos\n{_formatar_brl(total_debitos)}",
         x_position=20 + (CARD_WIDTH + card_spacing) * 2,
         y_position=cards_y,
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
-        font_size=32,
+        font_size=24,
         font_color=CORES["danger"],
         background_color=CORES["background"],
     )
 
-    # Card 4: Número de Transações
-    page.add_card(
-        visual_id="card_transacoes",
-        data_source=data_source,
-        measure_name="TransactionID",
-        card_title="Nº Transações",
+    page.add_text_box(
+        visual_id="kpi_transacoes",
+        text=f"Nº Transações\n{num_transacoes:,}".replace(",", "."),
         x_position=20 + (CARD_WIDTH + card_spacing) * 3,
         y_position=cards_y,
         height=CARD_HEIGHT,
         width=CARD_WIDTH,
-        font_size=32,
+        font_size=24,
         font_color=CORES["dark"],
         background_color=CORES["background"],
     )
@@ -454,13 +551,13 @@ def criar_pagina_visao_geral(dashboard: Any, data_source: str) -> None:
     # Gráfico: Créditos vs Débitos
     page.add_chart(
         visual_id="chart_credito_debito",
-        chart_type="clusteredBarChart",
+        chart_type="clusteredColumnChart",
         data_source=data_source,
         chart_title="Créditos vs Débitos por Mês",
-        x_axis_title="Valor (R$)",
-        y_axis_title="Mês",
-        x_axis_var="Valor",
-        y_axis_var="AnoMes",
+        x_axis_title="Mês",
+        y_axis_title="Valor (R$)",
+        x_axis_var="AnoMes",
+        y_axis_var="Credito_Abs",
         y_axis_var_aggregation_type="Sum",
         x_position=40 + chart_width,
         y_position=charts_y,
@@ -684,11 +781,13 @@ def gerar_dashboard(df: pd.DataFrame) -> None:
     logger.info(f"Dataset '{data_source}' added to dashboard")
 
     # Criar páginas
-    criar_pagina_visao_geral(dashboard, data_source)
+    criar_pagina_visao_geral(dashboard, data_source, df_dashboard)
     criar_pagina_analise_mensal(dashboard, data_source)
     criar_pagina_detalhamento(dashboard, data_source)
 
-    # Resumo final
+    _fix_chart_aggregation(DASHBOARD_PATH)
+    _inject_mobile_layout(DASHBOARD_PATH)
+
     logger.info("=" * 60)
     logger.info("Dashboard created successfully!")
     logger.info("=" * 60)
