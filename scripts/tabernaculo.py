@@ -49,7 +49,7 @@ SHEKEL_TO_KG = 0.0114  # 1 shekel ≈ 11.4 g
 
 def main() -> None:
     """Entry point for the script."""
-    pd.options.display.float_format = "{:,.2f}".format
+    pd.options.display.float_format = "{:,.2f}".format  # type: ignore[method-assign]
 
     # Cria DataFrame a partir dos dados dos materiais
     materials_df = pd.DataFrame([vars(m) for m in MATERIALS_DATA])
