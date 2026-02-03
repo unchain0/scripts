@@ -386,73 +386,6 @@ def _fix_chart_aggregation(dashboard_path: Path) -> None:
                 logger.warning(f"Failed to fix aggregation in {visual_file}: {e}")
 
 
-def _inject_mobile_layout(dashboard_path: Path) -> None:
-    """
-    Injeta layout móvel nos arquivos page.json do dashboard Power BI.
-
-    Empilha visuais verticalmente para visualização em dispositivos móveis.
-    A estrutura PBIP armazena visuais em subpastas separadas.
-    """
-    import json
-
-    mobile_width = 320
-
-    for page_dir in dashboard_path.rglob("pages"):
-        for page_subdir in page_dir.iterdir():
-            if not page_subdir.is_dir() or page_subdir.name == "pages.json":
-                continue
-
-            page_file = page_subdir / "page.json"
-            visuals_dir = page_subdir / "visuals"
-
-            if not page_file.exists() or not visuals_dir.exists():
-                continue
-
-            try:
-                page_data = json.loads(page_file.read_text(encoding="utf-8"))
-
-                mobile_y_offset = 0
-                visual_spacing = 10
-                mobile_visuals = []
-
-                for visual_dir in sorted(visuals_dir.iterdir()):
-                    visual_file = visual_dir / "visual.json"
-                    if not visual_file.exists():
-                        continue
-
-                    visual_data = json.loads(visual_file.read_text(encoding="utf-8"))
-                    original_height = visual_data.get("position", {}).get("height", 200)
-                    visual_name = visual_data.get("name", visual_dir.name)
-
-                    mobile_visuals.append(
-                        {
-                            "name": visual_name,
-                            "position": {
-                                "x": 0,
-                                "y": mobile_y_offset,
-                                "width": mobile_width,
-                                "height": min(original_height, 200),
-                            },
-                        }
-                    )
-                    mobile_y_offset += min(original_height, 200) + visual_spacing
-
-                if mobile_visuals:
-                    page_data["mobileState"] = {
-                        "visualContainers": mobile_visuals,
-                        "width": mobile_width,
-                        "height": mobile_y_offset,
-                    }
-                    page_file.write_text(
-                        json.dumps(page_data, indent=2, ensure_ascii=False),
-                        encoding="utf-8",
-                    )
-                    logger.info(f"Injected mobile layout in {page_subdir.name}")
-
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning(f"Failed to inject mobile layout in {page_file}: {e}")
-
-
 def _formatar_brl(valor: float) -> str:
     """Formata valor monetário no padrão brasileiro (R$ 1.234,56)."""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -786,7 +719,6 @@ def gerar_dashboard(df: pd.DataFrame) -> None:
     criar_pagina_detalhamento(dashboard, data_source)
 
     _fix_chart_aggregation(DASHBOARD_PATH)
-    _inject_mobile_layout(DASHBOARD_PATH)
 
     logger.info("=" * 60)
     logger.info("Dashboard created successfully!")
